@@ -126,6 +126,35 @@ const validateNoDuplicates = (routes, categoryName) => {
   }
 };
 
+// ================= HELPER FOR STANDARDIZED HEADER =================
+function renderHeader(activePage, showFullscreen = false) {
+  return `
+  <header>
+    <div>
+      <div class="brand-title">PARKWAY SCHOOLS</div>
+      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
+    </div>
+    <div style="display:flex; align-items:center;">
+      ${showFullscreen ? '<button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen</button>' : ''}
+      <a href="/dashboard" class="nav-btn ${activePage === 'dashboard' ? 'nav-active' : ''}">📺 Live Monitor</a>
+      <a href="/dispatch" class="nav-btn ${activePage === 'dispatch' ? 'nav-active' : ''}">📱 Driver Kiosk</a>
+      <a href="/admin" class="nav-btn ${activePage === 'admin' ? 'nav-active' : ''}">📋 Admin Portal</a>
+      <a href="/mechanics" class="nav-btn ${activePage === 'mechanics' ? 'nav-active' : ''}">🛠️ Shop Portal</a>
+    </div>
+  </header>
+  `;
+}
+
+const COMMON_CSS = `
+  body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
+  header { background-color: #DD0000; color: #fff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
+  .brand-title { font-size: 18px; font-weight: bold; text-transform: uppercase; }
+  .brand-tagline { font-size: 10px; letter-spacing: 1px; color: #fff; }
+  .nav-btn { color:#fff; font-weight:bold; background:#666; padding:6px 12px; border:none; cursor:pointer; text-decoration:none; font-size:11px; margin-left: 6px; border-radius: 2px; font-family:'Trebuchet MS'; display:inline-block; }
+  .nav-btn:hover { background: #444; }
+  .nav-active { background: #DD0000; border: 1.5px solid #ffffff; }
+`;
+
 // ================= SAMPLE CSV DOWNLOAD ENDPOINTS =================
 
 app.get('/api/samples/drivers', (req, res) => {
@@ -427,10 +456,7 @@ app.get('/dashboard', (req, res) => {
 <head>
   <title>Parkway Schools - Live Dispatch Monitor</title>
   <style>
-    body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; overflow-x: hidden; }
-    header { background-color: #DD0000; color: #fff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
-    .brand-title { font-size: 18px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 10px; letter-spacing: 1px; color: #fff; }
+    ${COMMON_CSS}
     .toolbar { background: #fff; padding: 8px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #ccc; }
     .kiosk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 10px; height: calc(100vh - 105px); box-sizing: border-box; }
     .column { background: #fff; border-radius: 4px; border-top: 4px solid #666; padding: 8px; display: flex; flex-direction: column; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow-y: auto; }
@@ -439,7 +465,6 @@ app.get('/dashboard', (req, res) => {
     .column-returned { border-top-color: #2e7d32; }
     .col-title { font-size: 13px; font-weight: bold; text-transform: uppercase; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 2px solid #ddd; display: flex; justify-content: space-between; }
     
-    /* Single-line compact card style */
     .route-card {
       background: #fafafa;
       border: 1px solid #e0e0e0;
@@ -459,26 +484,10 @@ app.get('/dashboard', (req, res) => {
     .badge { background: #eee; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: bold; }
     .badge-slot { background: #666; color: #fff; text-transform: uppercase; }
     .badge-delayed { background: #DD0000; color: #fff; text-transform: uppercase; }
-    .live-pulse { width: 8px; height: 8px; background-color: #2e7d32; border-radius: 50%; display: inline-block; margin-right: 5px; animation: blink 1.5s infinite; }
-    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:4px 8px; border:none; cursor:pointer; text-decoration:none; font-size:10px; margin-left: 6px; font-family:'Trebuchet MS'; }
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <div class="brand-title">PARKWAY SCHOOLS</div>
-      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
-    </div>
-    <div style="display:flex; align-items:center;">
-      <span class="live-pulse"></span>
-      <span style="font-size: 12px; font-weight: bold; margin-right:10px;">LIVE MONITOR</span>
-      <button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen</button>
-      <a href="/admin" class="nav-btn">📋 Admin</a>
-      <a href="/dispatch" class="nav-btn">📱 Kiosk</a>
-      <a href="/mechanics" class="nav-btn">🛠️ Shop</a>
-    </div>
-  </header>
+  ${renderHeader('dashboard', true)}
 
   <div class="toolbar">
     <label style="font-weight: bold; font-size: 12px;">Date: 
@@ -613,10 +622,7 @@ app.get('/dispatch', (req, res) => {
 <head>
   <title>Parkway Schools - Dispatch Kiosk</title>
   <style>
-    body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
-    header { background-color: #DD0000; color: #fff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
-    .brand-title { font-size: 18px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 10px; letter-spacing: 1px; color: #fff; }
+    ${COMMON_CSS}
     .toolbar { background: #fff; padding: 8px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #ccc; }
     .kiosk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 10px; height: calc(100vh - 105px); box-sizing: border-box; }
     .column { background: #fff; border-radius: 4px; border-top: 4px solid #666; padding: 8px; display: flex; flex-direction: column; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow-y: auto; }
@@ -625,7 +631,6 @@ app.get('/dispatch', (req, res) => {
     .column-returned { border-top-color: #2e7d32; }
     .col-title { font-size: 13px; font-weight: bold; text-transform: uppercase; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 2px solid #ddd; display: flex; justify-content: space-between; }
     
-    /* Single-line compact card style */
     .route-card {
       background: #fafafa;
       border: 1px solid #e0e0e0;
@@ -650,22 +655,10 @@ app.get('/dispatch', (req, res) => {
     .badge { background: #eee; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: bold; }
     .badge-slot { background: #666; color: #fff; text-transform: uppercase; }
     .badge-delayed { background: #DD0000; color: #fff; }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:4px 8px; border:none; cursor:pointer; text-decoration:none; font-size:10px; margin-left: 6px; font-family:'Trebuchet MS'; }
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <div class="brand-title">PARKWAY SCHOOLS</div>
-      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
-    </div>
-    <div>
-      <span style="font-size: 12px; font-weight: bold;">DRIVER KIOSK</span>
-      <button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen</button>
-      <a href="/dashboard" class="nav-btn">📺 Monitor</a>
-      <a href="/admin" class="nav-btn">📋 Admin</a>
-    </div>
-  </header>
+  ${renderHeader('dispatch', true)}
 
   <div class="toolbar">
     <label style="font-weight: bold; font-size: 12px;">Date: 
@@ -818,12 +811,9 @@ app.get('/admin', (req, res) => {
 <head>
   <title>Parkway Schools - Transportation Admin</title>
   <style>
-    body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
-    header { background-color: #DD0000; color: #fff; padding: 15px 30px; border-bottom: 4px solid #FF9F3D; display: flex; justify-content: space-between; align-items: center; }
-    .brand-title { font-size: 22px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 12px; letter-spacing: 1px; color: #fff; }
-    .container { padding: 25px 30px; }
-    h2 { color: #DD0000; font-size: 18px; text-transform: uppercase; border-bottom: 2px solid #666; padding-bottom: 4px; }
+    ${COMMON_CSS}
+    .container { padding: 20px 30px; }
+    h2 { color: #DD0000; font-size: 16px; text-transform: uppercase; border-bottom: 2px solid #666; padding-bottom: 4px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
     .card { background: #fff; padding: 18px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-top: 3px solid #666; }
     form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
@@ -832,23 +822,11 @@ app.get('/admin', (req, res) => {
     button:hover { background: #b30000; }
     .btn-secondary { background: #666; }
     .route-group { background: #fafafa; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:8px 12px; text-decoration:none; margin-left: 10px; }
     .upload-box { background: #fdfdfd; border: 1px dashed #666; padding: 10px; margin-top: 10px; font-size: 12px; }
   </style>
 </head>
 <body>
-
-  <header>
-    <div>
-      <div class="brand-title">PARKWAY SCHOOLS</div>
-      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
-    </div>
-    <div>
-      <a href="/dashboard" class="nav-btn">📺 Monitor Dashboard</a>
-      <a href="/dispatch" class="nav-btn">📱 Dispatch Kiosk</a>
-      <a href="/mechanics" class="nav-btn">🛠️ Shop Portal</a>
-    </div>
-  </header>
+  ${renderHeader('admin', false)}
 
   <div class="container">
     <div class="grid">
@@ -1174,12 +1152,9 @@ app.get('/mechanics', (req, res) => {
 <head>
   <title>Parkway Schools - Shop & Fleet Status</title>
   <style>
-    body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
-    header { background-color: #DD0000; color: #fff; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid #FF9F3D; }
-    .brand-title { font-size: 22px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 12px; letter-spacing: 1px; color: #fff; }
-    .container { padding: 25px 30px; }
-    h2 { color: #DD0000; font-size: 18px; text-transform: uppercase; border-bottom: 2px solid #666; padding-bottom: 4px; }
+    ${COMMON_CSS}
+    .container { padding: 20px 30px; }
+    h2 { color: #DD0000; font-size: 16px; text-transform: uppercase; border-bottom: 2px solid #666; padding-bottom: 4px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
     .card { background: #fff; padding: 18px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-top: 3px solid #666; }
     .card-in-shop { border-top-color: #DD0000; background: #fff8f8; }
@@ -1190,21 +1165,10 @@ app.get('/mechanics', (req, res) => {
     input, select, button { padding: 8px 10px; border: 1px solid #666; font-family: 'Trebuchet MS', sans-serif; font-size: 13px; }
     button { background: #DD0000; color: #fff; font-weight: bold; border: none; cursor: pointer; text-transform: uppercase; }
     button:hover { background: #b30000; }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:8px 12px; text-decoration:none; margin-left: 10px; }
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <div class="brand-title">PARKWAY SCHOOLS</div>
-      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
-    </div>
-    <div>
-      <a href="/admin" class="nav-btn">📋 Admin Portal</a>
-      <a href="/dispatch" class="nav-btn">📱 Dispatch Kiosk</a>
-      <a href="/dashboard" class="nav-btn">📺 Monitor Dashboard</a>
-    </div>
-  </header>
+  ${renderHeader('mechanics', false)}
 
   <div class="container">
     <h2>🛠️ Fleet Maintenance & Shop Portal</h2>
