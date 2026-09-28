@@ -310,7 +310,7 @@ app.post('/api/upload/schedule', upload.single('file'), (req, res) => {
 
 // ================= ROUTE AND STATUS APIs =================
 
-// --- Drivers CRUD ---
+// --- Drivers CRUD with Auto-Unassign ---
 app.get('/api/drivers', async (req, res) => res.json(await Driver.find()));
 app.post('/api/drivers', async (req, res) => {
   try {
@@ -327,12 +327,52 @@ app.put('/api/drivers/:id', async (req, res) => {
 });
 app.delete('/api/drivers/:id', async (req, res) => {
   try {
-    await Driver.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
+    const driverId = req.params.id;
+    const force = req.query.force === 'true';
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const futureSchedules = await DailySchedule.find({
+      date: { $gte: todayStr },$or: [
+        { 'amRoutes.driverId': driverId },
+        { 'pmRoutes.driverId': driverId },
+        { 'fieldTrips.driverId': driverId }
+      ]
+    });
+
+    if (futureSchedules.length > 0 && !force) {
+      const dates = futureSchedules.map(s => s.date).join(', ');
+      return res.status(400).json({
+        hasConflict: true,
+        error: `Driver is assigned to future route schedules on: ${dates}. Please reassign them first or confirm force deletion to unassign them automatically.`
+      });
+    }
+
+    if (force && futureSchedules.length > 0) {
+      await DailySchedule.updateMany(
+        { date: { $gte: todayStr } },
+        {
+          $set: {
+            'amRoutes.$[elem1].driverId': null,
+            'pmRoutes.$[elem2].driverId': null,
+            'fieldTrips.$[elem3].driverId': null
+          }
+        },
+        {
+          arrayFilters: [
+            { 'elem1.driverId': driverId },
+            { 'elem2.driverId': driverId },
+            { 'elem3.driverId': driverId }
+          ]
+        }
+      );
+    }
+
+    await Driver.findByIdAndDelete(driverId);
+    res.json({ success: true, unassignedSchedules: force ? futureSchedules.length : 0 });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// --- Buses CRUD ---
+// --- Buses CRUD with Auto-Unassign ---
 app.get('/api/buses', async (req, res) => res.json(await Bus.find()));
 app.post('/api/buses', async (req, res) => {
   try {
@@ -349,8 +389,48 @@ app.put('/api/buses/:id', async (req, res) => {
 });
 app.delete('/api/buses/:id', async (req, res) => {
   try {
-    await Bus.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
+    const busId = req.params.id;
+    const force = req.query.force === 'true';
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const futureSchedules = await DailySchedule.find({
+      date: { $gte: todayStr },$or: [
+        { 'amRoutes.busId': busId },
+        { 'pmRoutes.busId': busId },
+        { 'fieldTrips.busId': busId }
+      ]
+    });
+
+    if (futureSchedules.length > 0 && !force) {
+      const dates = futureSchedules.map(s => s.date).join(', ');
+      return res.status(400).json({
+        hasConflict: true,
+        error: `Bus is assigned to future route schedules on: ${dates}. Please reassign it first or confirm force deletion to unassign it automatically.`
+      });
+    }
+
+    if (force && futureSchedules.length > 0) {
+      await DailySchedule.updateMany(
+        { date: { $gte: todayStr } },
+        {
+          $set: {
+            'amRoutes.$[elem1].busId': null,
+            'pmRoutes.$[elem2].busId': null,
+            'fieldTrips.$[elem3].busId': null
+          }
+        },
+        {
+          arrayFilters: [
+            { 'elem1.busId': busId },
+            { 'elem2.busId': busId },
+            { 'elem3.busId': busId }
+          ]
+        }
+      );
+    }
+
+    await Bus.findByIdAndDelete(busId);
+    res.json({ success: true, unassignedSchedules: force ? futureSchedules.length : 0 });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
@@ -866,7 +946,6 @@ app.get('/admin', (req, res) => {
     .route-group { background: #fafafa; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; }
     .upload-box { background: #fdfdfd; border: 1px dashed #666; padding: 10px; margin-top: 10px; font-size: 12px; }
     
-    /* Edit Modal Overlay */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
     .modal-content { background: #fff; padding: 20px; border-top: 4px solid #DD0000; border-radius: 4px; width: 350px; }
   </style>
@@ -876,7 +955,6 @@ app.get('/admin', (req, res) => {
 
   <div class="container">
     <div class="grid">
-      <!-- Drivers Column -->
       <div class="card">
         <h2>Drivers</h2>
         <form id="driverForm">
@@ -896,7 +974,6 @@ app.get('/admin', (req, res) => {
         <ul id="driverList" style="margin-top:15px; padding-left:0; list-style:none;"></ul>
       </div>
 
-      <!-- Buses Column -->
       <div class="card">
         <h2>Buses</h2>
         <form id="busForm">
@@ -915,7 +992,6 @@ app.get('/admin', (req, res) => {
         <ul id="busList" style="margin-top:15px; padding-left:0; list-style:none;"></ul>
       </div>
 
-      <!-- Mechanics Column -->
       <div class="card">
         <h2>Mechanics</h2>
         <form id="mechForm">
@@ -935,7 +1011,6 @@ app.get('/admin', (req, res) => {
       </div>
     </div>
 
-    <!-- Daily Route Schedule Builder Card -->
     <div class="card" style="margin-top: 25px; border-top-color: #DD0000;">
       <h2>Daily Route Schedule Builder</h2>
       
@@ -977,7 +1052,6 @@ app.get('/admin', (req, res) => {
     </div>
   </div>
 
-  <!-- Inline Edit Modal -->
   <div id="editModal" class="modal-overlay">
     <div class="modal-content">
       <h3 id="modalTitle" style="margin-top:0; color:#DD0000;">Edit Record</h3>
@@ -1037,9 +1111,29 @@ app.get('/admin', (req, res) => {
 
     async function deleteItem(type, id) {
       if (!confirm(\`Are you sure you want to delete this \${type}?\`)) return;
+
       const endpoint = type === 'driver' ? '/api/drivers/' : type === 'bus' ? '/api/buses/' : '/api/mechanics/';
-      await fetch(endpoint + id, { method: 'DELETE' });
-      fetchData();
+      
+      let res = await fetch(endpoint + id, { method: 'DELETE' });
+      let data = await res.json();
+
+      if (!res.ok && data.hasConflict) {
+        const forceDelete = confirm(\`\${data.error}\\n\\nDo you want to FORCE DELETE anyway?\`);
+        if (forceDelete) {
+          res = await fetch(\`\${endpoint}\${id}?force=true\`, { method: 'DELETE' });
+          data = await res.json();
+          if (res.ok) {
+            alert(\`\${type.toUpperCase()} force deleted and unassigned from future schedules.\`);
+            fetchData();
+          } else {
+            alert('Error: ' + data.error);
+          }
+        }
+      } else if (res.ok) {
+        fetchData();
+      } else {
+        alert('Error: ' + data.error);
+      }
     }
 
     function openEdit(type, id) {
