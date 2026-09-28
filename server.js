@@ -50,7 +50,7 @@ const Mechanic = mongoose.model('Mechanic', new mongoose.Schema({
 
 const RouteEntrySchema = new mongoose.Schema({
   routeName: String,
-  scheduledTime: { type: String, default: '07:00' }, // Departure time e.g., "07:15"
+  scheduledTime: { type: String, default: '07:00' },
   driverId: { type: mongoose.Schema.Types.ObjectId, ref: 'Driver' },
   busId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bus' },
   status: { 
@@ -90,7 +90,6 @@ function startDelayedRouteScanner() {
             const [hours, minutes] = route.scheduledTime.split(':').map(Number);
             const scheduledMinutes = hours * 60 + minutes;
 
-            // Flag as DELAYED if current time is 10+ minutes past scheduled start
             if (currentMinutes > scheduledMinutes + 10) {
               route.status = 'Delayed';
               updated = true;
@@ -106,7 +105,7 @@ function startDelayedRouteScanner() {
     } catch (err) {
       console.error('Error scanning delayed routes:', err.message);
     }
-  }, 60000); // Scans database every 60 seconds
+  }, 60000);
 }
 
 const validateNoDuplicates = (routes, categoryName) => {
@@ -355,7 +354,20 @@ app.post('/api/schedule/update-status', async (req, res) => {
     const schedule = await DailySchedule.findOne({ date });
     if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
-    const route = schedule[category].id(routeId);
+    let route = null;
+    
+    // If category is "all", locate which array contains the route item
+    if (category === 'all') {
+      ['amRoutes', 'pmRoutes', 'fieldTrips'].forEach(cat => {
+        const found = schedule[cat].id(routeId);
+        if (found) {
+          route = found;
+        }
+      });
+    } else {
+      route = schedule[category].id(routeId);
+    }
+
     if (!route) return res.status(404).json({ error: 'Route item not found' });
 
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -436,6 +448,7 @@ app.get('/dashboard', (req, res) => {
     .route-card-title { font-weight: bold; font-size: 13px; color: #DD0000; }
     .route-info { margin: 3px 0; }
     .badge { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+    .badge-slot { background: #666; color: #fff; font-size: 9px; margin-left: 4px; text-transform: uppercase; }
     .badge-delayed { background: #DD0000; color: #fff; text-transform: uppercase; }
     .live-pulse { width: 8px; height: 8px; background-color: #2e7d32; border-radius: 50%; display: inline-block; margin-right: 5px; animation: blink 1.5s infinite; }
     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
@@ -464,6 +477,7 @@ app.get('/dashboard', (req, res) => {
     </label>
     <label style="font-weight: bold; font-size: 13px;">Slot: 
       <select id="slotFilter" onchange="loadDashData()" style="font-family:'Trebuchet MS'; padding:4px;">
+        <option value="all">All Routes</option>
         <option value="amRoutes">AM Routes</option>
         <option value="pmRoutes">PM Routes</option>
         <option value="fieldTrips">Field Trips</option>
@@ -504,7 +518,19 @@ app.get('/dashboard', (req, res) => {
       const res = await fetch('/api/schedule/' + date);
       const schedule = await res.json();
 
-      const routes = schedule[slot] || [];
+      let routes = [];
+      if (slot === 'all') {
+        const ams = (schedule.amRoutes || []).map(r => ({ ...r, categoryTag: 'AM' }));
+        const pms = (schedule.pmRoutes || []).map(r => ({ ...r, categoryTag: 'PM' }));
+        const trips = (schedule.fieldTrips || []).map(r => ({ ...r, categoryTag: 'Field Trip' }));
+        routes = [...ams, ...pms, ...trips];
+      } else {
+        routes = (schedule[slot] || []).map(r => ({ 
+          ...r, 
+          categoryTag: slot === 'amRoutes' ? 'AM' : slot === 'pmRoutes' ? 'PM' : 'Field Trip' 
+        }));
+      }
+
       const colPending = document.getElementById('colPending');
       const colEnRoute = document.getElementById('colEnRoute');
       const colReturned = document.getElementById('colReturned');
@@ -524,7 +550,10 @@ app.get('/dashboard', (req, res) => {
           cPending++;
           card.innerHTML = \`
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div class="route-card-title">\${r.routeName}</div>
+              <div>
+                <span class="route-card-title">\${r.routeName}</span>
+                <span class="badge badge-slot">\${r.categoryTag}</span>
+              </div>
               \${isDelayed ? '<span class="badge badge-delayed">⚠️ Delayed</span>' : ''}
             </div>
             <div class="route-info">⏰ <b>Departure:</b> \${r.scheduledTime || 'N/A'}</div>
@@ -535,7 +564,12 @@ app.get('/dashboard', (req, res) => {
         } else if (r.status === 'En Route') {
           cEnRoute++;
           card.innerHTML = \`
-            <div class="route-card-title">\${r.routeName}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span class="route-card-title">\${r.routeName}</span>
+                <span class="badge badge-slot">\${r.categoryTag}</span>
+              </div>
+            </div>
             <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
             <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
             <div class="route-info" style="color:#DD0000; font-weight:bold;">⏱️ Checked In: \${r.checkInTime || 'N/A'}</div>
@@ -544,7 +578,12 @@ app.get('/dashboard', (req, res) => {
         } else {
           cReturned++;
           card.innerHTML = \`
-            <div class="route-card-title">\${r.routeName}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span class="route-card-title">\${r.routeName}</span>
+                <span class="badge badge-slot">\${r.categoryTag}</span>
+              </div>
+            </div>
             <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
             <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
             <div class="route-info">🏁 <b>Status:</b> \${r.status}</div>
@@ -708,6 +747,7 @@ app.get('/dispatch', (req, res) => {
     .btn-undo { background: #666; color: #fff; border: none; }
     .btn-undo:hover { background: #444; }
     .badge { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+    .badge-slot { background: #666; color: #fff; font-size: 9px; margin-left: 4px; text-transform: uppercase; }
     .badge-delayed { background: #DD0000; color: #fff; }
     .nav-btn { color:#fff; font-weight:bold; background:#666; padding:6px 10px; border:none; cursor:pointer; text-decoration:none; font-size:11px; margin-left: 8px; font-family:'Trebuchet MS'; }
   </style>
@@ -732,6 +772,7 @@ app.get('/dispatch', (req, res) => {
     </label>
     <label style="font-weight: bold; font-size: 13px;">Slot: 
       <select id="slotFilter" onchange="loadKioskData()">
+        <option value="all">All Routes</option>
         <option value="amRoutes">AM Routes</option>
         <option value="pmRoutes">PM Routes</option>
         <option value="fieldTrips">Field Trips</option>
@@ -772,7 +813,19 @@ app.get('/dispatch', (req, res) => {
       const res = await fetch('/api/schedule/' + date);
       const schedule = await res.json();
 
-      const routes = schedule[slot] || [];
+      let routes = [];
+      if (slot === 'all') {
+        const ams = (schedule.amRoutes || []).map(r => ({ ...r, categoryTag: 'AM' }));
+        const pms = (schedule.pmRoutes || []).map(r => ({ ...r, categoryTag: 'PM' }));
+        const trips = (schedule.fieldTrips || []).map(r => ({ ...r, categoryTag: 'Field Trip' }));
+        routes = [...ams, ...pms, ...trips];
+      } else {
+        routes = (schedule[slot] || []).map(r => ({ 
+          ...r, 
+          categoryTag: slot === 'amRoutes' ? 'AM' : slot === 'pmRoutes' ? 'PM' : 'Field Trip' 
+        }));
+      }
+
       const colPending = document.getElementById('colPending');
       const colEnRoute = document.getElementById('colEnRoute');
       const colReturned = document.getElementById('colReturned');
@@ -792,7 +845,10 @@ app.get('/dispatch', (req, res) => {
           cPending++;
           card.innerHTML = \`
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div class="route-card-title">\${r.routeName}</div>
+              <div>
+                <span class="route-card-title">\${r.routeName}</span>
+                <span class="badge badge-slot">\${r.categoryTag}</span>
+              </div>
               \${isDelayed ? '<span class="badge badge-delayed">⚠️ Delayed</span>' : ''}
             </div>
             <div class="route-info">⏰ <b>Departure:</b> \${r.scheduledTime || 'N/A'}</div>
@@ -804,7 +860,12 @@ app.get('/dispatch', (req, res) => {
         } else if (r.status === 'En Route') {
           cEnRoute++;
           card.innerHTML = \`
-            <div class="route-card-title">\${r.routeName}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span class="route-card-title">\${r.routeName}</span>
+                <span class="badge badge-slot">\${r.categoryTag}</span>
+              </div>
+            </div>
             <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
             <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
             <div class="route-info">⏱️ <b>Checked In:</b> \${r.checkInTime || 'N/A'}</div>
@@ -821,7 +882,12 @@ app.get('/dispatch', (req, res) => {
         } else {
           cReturned++;
           card.innerHTML = \`
-            <div class="route-card-title">\${r.routeName}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span class="route-card-title">\${r.routeName}</span>
+                <span class="badge badge-slot">\${r.categoryTag}</span>
+              </div>
+            </div>
             <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
             <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
             <div class="route-info">🏁 <b>Status:</b> \${r.status}</div>
