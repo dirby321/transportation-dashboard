@@ -1,0 +1,4 @@
+dirby_db_user
+UXb6Lm5m0ICPOSt2
+
+mongodb+srv://dirby_db_user:UXb6Lm5m0ICPOSt2@cluster0.2pq7ytr.mongodb.net/?appName=Cluster0
