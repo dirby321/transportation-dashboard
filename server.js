@@ -355,14 +355,10 @@ app.post('/api/schedule/update-status', async (req, res) => {
     if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
     let route = null;
-    
-    // If category is "all", locate which array contains the route item
     if (category === 'all') {
       ['amRoutes', 'pmRoutes', 'fieldTrips'].forEach(cat => {
         const found = schedule[cat].id(routeId);
-        if (found) {
-          route = found;
-        }
+        if (found) route = found;
       });
     } else {
       route = schedule[category].id(routeId);
@@ -432,27 +428,40 @@ app.get('/dashboard', (req, res) => {
   <title>Parkway Schools - Live Dispatch Monitor</title>
   <style>
     body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; overflow-x: hidden; }
-    header { background-color: #DD0000; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
-    .brand-title { font-size: 20px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 11px; letter-spacing: 1px; color: #fff; }
-    .toolbar { background: #fff; padding: 10px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #ccc; }
-    .kiosk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 12px; height: calc(100vh - 120px); box-sizing: border-box; }
-    .column { background: #fff; border-radius: 4px; border-top: 4px solid #666; padding: 10px; display: flex; flex-direction: column; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow-y: auto; }
+    header { background-color: #DD0000; color: #fff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
+    .brand-title { font-size: 18px; font-weight: bold; text-transform: uppercase; }
+    .brand-tagline { font-size: 10px; letter-spacing: 1px; color: #fff; }
+    .toolbar { background: #fff; padding: 8px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #ccc; }
+    .kiosk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 10px; height: calc(100vh - 105px); box-sizing: border-box; }
+    .column { background: #fff; border-radius: 4px; border-top: 4px solid #666; padding: 8px; display: flex; flex-direction: column; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow-y: auto; }
     .column-pending { border-top-color: #FF9F3D; }
     .column-enroute { border-top-color: #DD0000; }
     .column-returned { border-top-color: #2e7d32; }
-    .col-title { font-size: 14px; font-weight: bold; text-transform: uppercase; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 2px solid #ddd; display: flex; justify-content: space-between; }
-    .route-card { background: #fafafa; border: 1px solid #e0e0e0; border-left: 4px solid #666; padding: 8px; margin-bottom: 8px; border-radius: 2px; font-size: 12px; }
-    .route-card-delayed { border: 2px solid #DD0000; border-left: 6px solid #DD0000; background: #fff0f0; animation: pulseRed 2s infinite; }
-    @keyframes pulseRed { 0% { box-shadow: 0 0 0 0 rgba(221,0,0,0.4); } 70% { box-shadow: 0 0 0 10px rgba(221,0,0,0); } 100% { box-shadow: 0 0 0 0 rgba(221,0,0,0); } }
-    .route-card-title { font-weight: bold; font-size: 13px; color: #DD0000; }
-    .route-info { margin: 3px 0; }
-    .badge { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
-    .badge-slot { background: #666; color: #fff; font-size: 9px; margin-left: 4px; text-transform: uppercase; }
+    .col-title { font-size: 13px; font-weight: bold; text-transform: uppercase; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 2px solid #ddd; display: flex; justify-content: space-between; }
+    
+    /* Single-line compact card style */
+    .route-card {
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-left: 4px solid #666;
+      padding: 6px 10px;
+      margin-bottom: 5px;
+      border-radius: 2px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      white-space: nowrap;
+      gap: 8px;
+    }
+    .route-card-delayed { border: 1.5px solid #DD0000; border-left: 5px solid #DD0000; background: #fff0f0; }
+    .route-card-title { font-weight: bold; font-size: 12px; color: #DD0000; }
+    .badge { background: #eee; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: bold; }
+    .badge-slot { background: #666; color: #fff; text-transform: uppercase; }
     .badge-delayed { background: #DD0000; color: #fff; text-transform: uppercase; }
     .live-pulse { width: 8px; height: 8px; background-color: #2e7d32; border-radius: 50%; display: inline-block; margin-right: 5px; animation: blink 1.5s infinite; }
     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:6px 10px; border:none; cursor:pointer; text-decoration:none; font-size:11px; margin-left: 8px; font-family:'Trebuchet MS'; }
+    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:4px 8px; border:none; cursor:pointer; text-decoration:none; font-size:10px; margin-left: 6px; font-family:'Trebuchet MS'; }
   </style>
 </head>
 <body>
@@ -463,8 +472,8 @@ app.get('/dashboard', (req, res) => {
     </div>
     <div style="display:flex; align-items:center;">
       <span class="live-pulse"></span>
-      <span style="font-size: 13px; font-weight: bold; margin-right:15px;">LIVE DISPATCH MONITOR (VIEW ONLY)</span>
-      <button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen Mode</button>
+      <span style="font-size: 12px; font-weight: bold; margin-right:10px;">LIVE MONITOR</span>
+      <button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen</button>
       <a href="/admin" class="nav-btn">📋 Admin</a>
       <a href="/dispatch" class="nav-btn">📱 Kiosk</a>
       <a href="/mechanics" class="nav-btn">🛠️ Shop</a>
@@ -472,18 +481,18 @@ app.get('/dashboard', (req, res) => {
   </header>
 
   <div class="toolbar">
-    <label style="font-weight: bold; font-size: 13px;">Date: 
-      <input type="date" id="dashDate" onchange="loadDashData()" style="padding:4px; font-family:'Trebuchet MS';" />
+    <label style="font-weight: bold; font-size: 12px;">Date: 
+      <input type="date" id="dashDate" onchange="loadDashData()" style="padding:2px; font-family:'Trebuchet MS';" />
     </label>
-    <label style="font-weight: bold; font-size: 13px;">Slot: 
-      <select id="slotFilter" onchange="loadDashData()" style="font-family:'Trebuchet MS'; padding:4px;">
+    <label style="font-weight: bold; font-size: 12px;">Slot: 
+      <select id="slotFilter" onchange="loadDashData()" style="font-family:'Trebuchet MS'; padding:2px;">
         <option value="all">All Routes</option>
         <option value="amRoutes">AM Routes</option>
         <option value="pmRoutes">PM Routes</option>
         <option value="fieldTrips">Field Trips</option>
       </select>
     </label>
-    <span style="margin-left: auto; font-size:11px; color:#666;">Auto-refreshes every 10 seconds</span>
+    <span style="margin-left: auto; font-size:10px; color:#666;">Auto-refreshes every 10s</span>
   </div>
 
   <div class="kiosk-grid">
@@ -549,45 +558,35 @@ app.get('/dashboard', (req, res) => {
         if (r.status === 'Pending' || isDelayed) {
           cPending++;
           card.innerHTML = \`
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <span class="route-card-title">\${r.routeName}</span>
-                <span class="badge badge-slot">\${r.categoryTag}</span>
-              </div>
+            <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
+              <span class="route-card-title">\${r.routeName}</span>
+              <span class="badge badge-slot">\${r.categoryTag}</span>
               \${isDelayed ? '<span class="badge badge-delayed">⚠️ Delayed</span>' : ''}
             </div>
-            <div class="route-info">⏰ <b>Departure:</b> \${r.scheduledTime || 'N/A'}</div>
-            <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
-            <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
+            <div style="color:#444;">👤 \${driverName} | 🚌 \${busNum}</div>
+            <div style="font-weight:bold; color:#666;">⏰ \${r.scheduledTime || 'N/A'}</div>
           \`;
           colPending.appendChild(card);
         } else if (r.status === 'En Route') {
           cEnRoute++;
           card.innerHTML = \`
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <span class="route-card-title">\${r.routeName}</span>
-                <span class="badge badge-slot">\${r.categoryTag}</span>
-              </div>
+            <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
+              <span class="route-card-title">\${r.routeName}</span>
+              <span class="badge badge-slot">\${r.categoryTag}</span>
             </div>
-            <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
-            <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
-            <div class="route-info" style="color:#DD0000; font-weight:bold;">⏱️ Checked In: \${r.checkInTime || 'N/A'}</div>
+            <div style="color:#444;">👤 \${driverName} | 🚌 \${busNum}</div>
+            <div style="color:#DD0000; font-weight:bold;">⏱️ \${r.checkInTime || 'N/A'}</div>
           \`;
           colEnRoute.appendChild(card);
         } else {
           cReturned++;
           card.innerHTML = \`
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <span class="route-card-title">\${r.routeName}</span>
-                <span class="badge badge-slot">\${r.categoryTag}</span>
-              </div>
+            <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
+              <span class="route-card-title">\${r.routeName}</span>
+              <span class="badge badge-slot">\${r.categoryTag}</span>
             </div>
-            <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
-            <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
-            <div class="route-info">🏁 <b>Status:</b> \${r.status}</div>
-            <div class="route-info" style="color:#2e7d32; font-weight:bold;">⏱️ Returned: \${r.returnTime || 'N/A'}</div>
+            <div style="color:#444;">👤 \${driverName} | 🚌 \${busNum}</div>
+            <div style="color:#2e7d32; font-weight:bold;">🏁 \${r.returnTime || 'N/A'}</div>
           \`;
           colReturned.appendChild(card);
         }
@@ -606,118 +605,6 @@ app.get('/dashboard', (req, res) => {
   `);
 });
 
-// ================= MECHANICS PORTAL =================
-app.get('/mechanics', (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Parkway Schools - Shop & Fleet Status</title>
-  <style>
-    body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
-    header { background-color: #DD0000; color: #fff; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid #FF9F3D; }
-    .brand-title { font-size: 22px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 12px; letter-spacing: 1px; color: #fff; }
-    .container { padding: 25px 30px; }
-    h2 { color: #DD0000; font-size: 18px; text-transform: uppercase; border-bottom: 2px solid #666; padding-bottom: 4px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
-    .card { background: #fff; padding: 18px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-top: 3px solid #666; }
-    .card-in-shop { border-top-color: #DD0000; background: #fff8f8; }
-    .status-badge { display: inline-block; padding: 3px 8px; font-size: 11px; font-weight: bold; border-radius: 3px; color: #fff; }
-    .badge-available { background: #2e7d32; }
-    .badge-shop { background: #DD0000; }
-    form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-    input, select, button { padding: 8px 10px; border: 1px solid #666; font-family: 'Trebuchet MS', sans-serif; font-size: 13px; }
-    button { background: #DD0000; color: #fff; font-weight: bold; border: none; cursor: pointer; text-transform: uppercase; }
-    button:hover { background: #b30000; }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:8px 12px; text-decoration:none; margin-left: 10px; }
-  </style>
-</head>
-<body>
-  <header>
-    <div>
-      <div class="brand-title">PARKWAY SCHOOLS</div>
-      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
-    </div>
-    <div>
-      <a href="/admin" class="nav-btn">📋 Admin Portal</a>
-      <a href="/dispatch" class="nav-btn">📱 Dispatch Kiosk</a>
-      <a href="/dashboard" class="nav-btn">📺 Monitor Dashboard</a>
-    </div>
-  </header>
-
-  <div class="container">
-    <h2>🛠️ Fleet Maintenance & Shop Portal</h2>
-    <div id="busGrid" class="grid"></div>
-  </div>
-
-  <script>
-    async function loadBuses() {
-      const buses = await (await fetch('/api/buses')).json();
-      const grid = document.getElementById('busGrid');
-      grid.innerHTML = '';
-
-      buses.forEach(b => {
-        const inShop = b.status === 'In Shop';
-        const card = document.createElement('div');
-        card.className = 'card ' + (inShop ? 'card-in-shop' : '');
-
-        card.innerHTML = \`
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0; font-size:18px;">Bus #\${b.busNumber} \${b.isSpare ? '(Spare)' : ''}</h3>
-            <span class="status-badge \${inShop ? 'badge-shop' : 'badge-available'}">\${b.status}</span>
-          </div>
-
-          <form onsubmit="saveBusStatus(event, '\${b._id}')">
-            <label style="font-size:12px; font-weight:bold;">Status:</label>
-            <select class="b-status" onchange="toggleShopFields(this)">
-              <option value="Available" \${!inShop ? 'selected' : ''}>Available</option>
-              <option value="In Shop" \${inShop ? 'selected' : ''}>In Shop</option>
-            </select>
-
-            <div class="shop-fields" style="display: \${inShop ? 'flex' : 'none'}; flex-direction:column; gap:8px;">
-              <input type="text" class="b-reason" placeholder="Reason (e.g. Brakes, Oil Change)" value="\${b.offlineReason || ''}" />
-              <label style="font-size:11px; font-weight:bold;">Expected Return Date:
-                <input type="date" class="b-return" value="\${b.expectedReturnDate || ''}" />
-              </label>
-            </div>
-
-            <button type="submit" style="margin-top:6px;">Update Bus</button>
-          </form>
-        \`;
-        grid.appendChild(card);
-      });
-    }
-
-    function toggleShopFields(selectEl) {
-      const fields = selectEl.parentElement.querySelector('.shop-fields');
-      fields.style.display = selectEl.value === 'In Shop' ? 'flex' : 'none';
-    }
-
-    async function saveBusStatus(e, busId) {
-      e.preventDefault();
-      const form = e.target;
-      const status = form.querySelector('.b-status').value;
-      const offlineReason = form.querySelector('.b-reason').value;
-      const expectedReturnDate = form.querySelector('.b-return').value;
-
-      await fetch('/api/buses/update-status', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ busId, status, offlineReason, expectedReturnDate })
-      });
-
-      alert('Bus status updated!');
-      loadBuses();
-    }
-
-    loadBuses();
-  </script>
-</body>
-</html>
-  `);
-});
-
 // ================= DISPATCH KIOSK DASHBOARD PAGE =================
 app.get('/dispatch', (req, res) => {
   res.send(`
@@ -727,29 +614,43 @@ app.get('/dispatch', (req, res) => {
   <title>Parkway Schools - Dispatch Kiosk</title>
   <style>
     body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
-    header { background-color: #DD0000; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
-    .brand-title { font-size: 20px; font-weight: bold; text-transform: uppercase; }
-    .brand-tagline { font-size: 11px; letter-spacing: 1px; color: #fff; }
-    .toolbar { background: #fff; padding: 10px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #ccc; }
-    .kiosk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 12px; height: calc(100vh - 120px); box-sizing: border-box; }
-    .column { background: #fff; border-radius: 4px; border-top: 4px solid #666; padding: 10px; display: flex; flex-direction: column; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow-y: auto; }
+    header { background-color: #DD0000; color: #fff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9F3D; }
+    .brand-title { font-size: 18px; font-weight: bold; text-transform: uppercase; }
+    .brand-tagline { font-size: 10px; letter-spacing: 1px; color: #fff; }
+    .toolbar { background: #fff; padding: 8px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #ccc; }
+    .kiosk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 10px; height: calc(100vh - 105px); box-sizing: border-box; }
+    .column { background: #fff; border-radius: 4px; border-top: 4px solid #666; padding: 8px; display: flex; flex-direction: column; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow-y: auto; }
     .column-pending { border-top-color: #FF9F3D; }
     .column-enroute { border-top-color: #DD0000; }
     .column-returned { border-top-color: #2e7d32; }
-    .col-title { font-size: 14px; font-weight: bold; text-transform: uppercase; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 2px solid #ddd; display: flex; justify-content: space-between; }
-    .route-card { background: #fafafa; border: 1px solid #e0e0e0; border-left: 4px solid #666; padding: 8px; margin-bottom: 8px; border-radius: 2px; font-size: 12px; }
-    .route-card-delayed { border: 2px solid #DD0000; border-left: 6px solid #DD0000; background: #fff0f0; }
-    .route-card-title { font-weight: bold; font-size: 13px; color: #DD0000; }
-    .route-info { margin: 3px 0; }
-    button, select { font-family: 'Trebuchet MS', sans-serif; font-size: 11px; padding: 5px 8px; font-weight: bold; border-radius: 2px; cursor: pointer; }
+    .col-title { font-size: 13px; font-weight: bold; text-transform: uppercase; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 2px solid #ddd; display: flex; justify-content: space-between; }
+    
+    /* Single-line compact card style */
+    .route-card {
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-left: 4px solid #666;
+      padding: 6px 10px;
+      margin-bottom: 5px;
+      border-radius: 2px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      white-space: nowrap;
+      gap: 6px;
+    }
+    .route-card-delayed { border: 1.5px solid #DD0000; border-left: 5px solid #DD0000; background: #fff0f0; }
+    .route-card-title { font-weight: bold; font-size: 12px; color: #DD0000; }
+    button, select { font-family: 'Trebuchet MS', sans-serif; font-size: 10px; padding: 3px 6px; font-weight: bold; border-radius: 2px; cursor: pointer; }
     .btn-checkin { background: #DD0000; color: #fff; border: none; }
     .btn-checkin:hover { background: #b30000; }
     .btn-undo { background: #666; color: #fff; border: none; }
     .btn-undo:hover { background: #444; }
-    .badge { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
-    .badge-slot { background: #666; color: #fff; font-size: 9px; margin-left: 4px; text-transform: uppercase; }
+    .badge { background: #eee; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: bold; }
+    .badge-slot { background: #666; color: #fff; text-transform: uppercase; }
     .badge-delayed { background: #DD0000; color: #fff; }
-    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:6px 10px; border:none; cursor:pointer; text-decoration:none; font-size:11px; margin-left: 8px; font-family:'Trebuchet MS'; }
+    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:4px 8px; border:none; cursor:pointer; text-decoration:none; font-size:10px; margin-left: 6px; font-family:'Trebuchet MS'; }
   </style>
 </head>
 <body>
@@ -759,18 +660,18 @@ app.get('/dispatch', (req, res) => {
       <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
     </div>
     <div>
-      <span style="font-size: 14px; font-weight: bold;">DRIVER DISPATCH KIOSK</span>
-      <button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen Mode</button>
-      <a href="/dashboard" class="nav-btn">📺 Monitor Dashboard</a>
-      <a href="/admin" class="nav-btn">📋 Admin Portal</a>
+      <span style="font-size: 12px; font-weight: bold;">DRIVER KIOSK</span>
+      <button class="nav-btn" onclick="toggleFullScreen()">📺 Fullscreen</button>
+      <a href="/dashboard" class="nav-btn">📺 Monitor</a>
+      <a href="/admin" class="nav-btn">📋 Admin</a>
     </div>
   </header>
 
   <div class="toolbar">
-    <label style="font-weight: bold; font-size: 13px;">Date: 
-      <input type="date" id="kioskDate" onchange="loadKioskData()" style="padding:4px;" />
+    <label style="font-weight: bold; font-size: 12px;">Date: 
+      <input type="date" id="kioskDate" onchange="loadKioskData()" style="padding:2px;" />
     </label>
-    <label style="font-weight: bold; font-size: 13px;">Slot: 
+    <label style="font-weight: bold; font-size: 12px;">Slot: 
       <select id="slotFilter" onchange="loadKioskData()">
         <option value="all">All Routes</option>
         <option value="amRoutes">AM Routes</option>
@@ -844,36 +745,28 @@ app.get('/dispatch', (req, res) => {
         if (r.status === 'Pending' || isDelayed) {
           cPending++;
           card.innerHTML = \`
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <span class="route-card-title">\${r.routeName}</span>
-                <span class="badge badge-slot">\${r.categoryTag}</span>
-              </div>
-              \${isDelayed ? '<span class="badge badge-delayed">⚠️ Delayed</span>' : ''}
+            <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
+              <span class="route-card-title">\${r.routeName}</span>
+              <span class="badge badge-slot">\${r.categoryTag}</span>
+              \${isDelayed ? '<span class="badge badge-delayed">⚠️</span>' : ''}
             </div>
-            <div class="route-info">⏰ <b>Departure:</b> \${r.scheduledTime || 'N/A'}</div>
-            <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
-            <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
-            <button class="btn-checkin" style="margin-top:4px;" onclick="updateStatus('\${r._id}', 'En Route')">Check In ➔</button>
+            <div style="color:#444; font-size:10px;">👤 \${driverName} | 🚌 \${busNum}</div>
+            <button class="btn-checkin" onclick="updateStatus('\${r._id}', 'En Route')">Check In ➔</button>
           \`;
           colPending.appendChild(card);
         } else if (r.status === 'En Route') {
           cEnRoute++;
           card.innerHTML = \`
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <span class="route-card-title">\${r.routeName}</span>
-                <span class="badge badge-slot">\${r.categoryTag}</span>
-              </div>
+            <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
+              <span class="route-card-title">\${r.routeName}</span>
+              <span class="badge badge-slot">\${r.categoryTag}</span>
             </div>
-            <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
-            <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
-            <div class="route-info">⏱️ <b>Checked In:</b> \${r.checkInTime || 'N/A'}</div>
-            <div style="margin-top:6px; display:flex; gap:5px; align-items:center;">
+            <div style="color:#444; font-size:10px;">👤 \${driverName} | 🚌 \${busNum}</div>
+            <div style="display:flex; gap:3px; align-items:center;">
               <select onchange="if(this.value) updateStatus('\${r._id}', this.value)">
-                <option value="">Mark Returned...</option>
-                <option value="Returned - On Site">Returned - On Site</option>
-                <option value="Returned - Left for the Day">Returned - Left for the Day</option>
+                <option value="">Return...</option>
+                <option value="Returned - On Site">On Site</option>
+                <option value="Returned - Left for the Day">Left Day</option>
               </select>
               <button class="btn-undo" onclick="updateStatus('\${r._id}', 'Pending')">Undo</button>
             </div>
@@ -882,17 +775,12 @@ app.get('/dispatch', (req, res) => {
         } else {
           cReturned++;
           card.innerHTML = \`
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <span class="route-card-title">\${r.routeName}</span>
-                <span class="badge badge-slot">\${r.categoryTag}</span>
-              </div>
+            <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
+              <span class="route-card-title">\${r.routeName}</span>
+              <span class="badge badge-slot">\${r.categoryTag}</span>
             </div>
-            <div class="route-info">👤 <b>Driver:</b> \${driverName}</div>
-            <div class="route-info">🚌 <b>Bus:</b> \${busNum}</div>
-            <div class="route-info">🏁 <b>Status:</b> \${r.status}</div>
-            <div class="route-info">⏱️ <b>Return Time:</b> \${r.returnTime || 'N/A'}</div>
-            <button class="btn-undo" style="margin-top:4px;" onclick="updateStatus('\${r._id}', 'En Route')">Undo Return</button>
+            <div style="color:#444; font-size:10px;">👤 \${driverName} | 🚌 \${busNum}</div>
+            <button class="btn-undo" onclick="updateStatus('\${r._id}', 'En Route')">Undo</button>
           \`;
           colReturned.appendChild(card);
         }
@@ -1272,6 +1160,118 @@ app.get('/admin', (req, res) => {
     }
 
     fetchData();
+  </script>
+</body>
+</html>
+  `);
+});
+
+// ================= MECHANICS PORTAL =================
+app.get('/mechanics', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Parkway Schools - Shop & Fleet Status</title>
+  <style>
+    body { font-family: 'Trebuchet MS', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #000; }
+    header { background-color: #DD0000; color: #fff; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid #FF9F3D; }
+    .brand-title { font-size: 22px; font-weight: bold; text-transform: uppercase; }
+    .brand-tagline { font-size: 12px; letter-spacing: 1px; color: #fff; }
+    .container { padding: 25px 30px; }
+    h2 { color: #DD0000; font-size: 18px; text-transform: uppercase; border-bottom: 2px solid #666; padding-bottom: 4px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+    .card { background: #fff; padding: 18px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-top: 3px solid #666; }
+    .card-in-shop { border-top-color: #DD0000; background: #fff8f8; }
+    .status-badge { display: inline-block; padding: 3px 8px; font-size: 11px; font-weight: bold; border-radius: 3px; color: #fff; }
+    .badge-available { background: #2e7d32; }
+    .badge-shop { background: #DD0000; }
+    form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    input, select, button { padding: 8px 10px; border: 1px solid #666; font-family: 'Trebuchet MS', sans-serif; font-size: 13px; }
+    button { background: #DD0000; color: #fff; font-weight: bold; border: none; cursor: pointer; text-transform: uppercase; }
+    button:hover { background: #b30000; }
+    .nav-btn { color:#fff; font-weight:bold; background:#666; padding:8px 12px; text-decoration:none; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="brand-title">PARKWAY SCHOOLS</div>
+      <div class="brand-tagline">HIGHER EXPECTATIONS. BRIGHTER FUTURES.</div>
+    </div>
+    <div>
+      <a href="/admin" class="nav-btn">📋 Admin Portal</a>
+      <a href="/dispatch" class="nav-btn">📱 Dispatch Kiosk</a>
+      <a href="/dashboard" class="nav-btn">📺 Monitor Dashboard</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <h2>🛠️ Fleet Maintenance & Shop Portal</h2>
+    <div id="busGrid" class="grid"></div>
+  </div>
+
+  <script>
+    async function loadBuses() {
+      const buses = await (await fetch('/api/buses')).json();
+      const grid = document.getElementById('busGrid');
+      grid.innerHTML = '';
+
+      buses.forEach(b => {
+        const inShop = b.status === 'In Shop';
+        const card = document.createElement('div');
+        card.className = 'card ' + (inShop ? 'card-in-shop' : '');
+
+        card.innerHTML = \`
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:18px;">Bus #\${b.busNumber} \${b.isSpare ? '(Spare)' : ''}</h3>
+            <span class="status-badge \${inShop ? 'badge-shop' : 'badge-available'}">\${b.status}</span>
+          </div>
+
+          <form onsubmit="saveBusStatus(event, '\${b._id}')">
+            <label style="font-size:12px; font-weight:bold;">Status:</label>
+            <select class="b-status" onchange="toggleShopFields(this)">
+              <option value="Available" \${!inShop ? 'selected' : ''}>Available</option>
+              <option value="In Shop" \${inShop ? 'selected' : ''}>In Shop</option>
+            </select>
+
+            <div class="shop-fields" style="display: \${inShop ? 'flex' : 'none'}; flex-direction:column; gap:8px;">
+              <input type="text" class="b-reason" placeholder="Reason (e.g. Brakes, Oil Change)" value="\${b.offlineReason || ''}" />
+              <label style="font-size:11px; font-weight:bold;">Expected Return Date:
+                <input type="date" class="b-return" value="\${b.expectedReturnDate || ''}" />
+              </label>
+            </div>
+
+            <button type="submit" style="margin-top:6px;">Update Bus</button>
+          </form>
+        \`;
+        grid.appendChild(card);
+      });
+    }
+
+    function toggleShopFields(selectEl) {
+      const fields = selectEl.parentElement.querySelector('.shop-fields');
+      fields.style.display = selectEl.value === 'In Shop' ? 'flex' : 'none';
+    }
+
+    async function saveBusStatus(e, busId) {
+      e.preventDefault();
+      const form = e.target;
+      const status = form.querySelector('.b-status').value;
+      const offlineReason = form.querySelector('.b-reason').value;
+      const expectedReturnDate = form.querySelector('.b-return').value;
+
+      await fetch('/api/buses/update-status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ busId, status, offlineReason, expectedReturnDate })
+      });
+
+      alert('Bus status updated!');
+      loadBuses();
+    }
+
+    loadBuses();
   </script>
 </body>
 </html>
