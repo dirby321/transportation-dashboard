@@ -310,6 +310,7 @@ app.post('/api/upload/schedule', upload.single('file'), (req, res) => {
 
 // ================= ROUTE AND STATUS APIs =================
 
+// --- Drivers CRUD ---
 app.get('/api/drivers', async (req, res) => res.json(await Driver.find()));
 app.post('/api/drivers', async (req, res) => {
   try {
@@ -318,13 +319,38 @@ app.post('/api/drivers', async (req, res) => {
     res.status(201).json(driver);
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
+app.put('/api/drivers/:id', async (req, res) => {
+  try {
+    const driver = await Driver.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(driver);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.delete('/api/drivers/:id', async (req, res) => {
+  try {
+    await Driver.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
 
+// --- Buses CRUD ---
 app.get('/api/buses', async (req, res) => res.json(await Bus.find()));
 app.post('/api/buses', async (req, res) => {
   try {
     const bus = new Bus(req.body);
     await bus.save();
     res.status(201).json(bus);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.put('/api/buses/:id', async (req, res) => {
+  try {
+    const bus = await Bus.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(bus);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.delete('/api/buses/:id', async (req, res) => {
+  try {
+    await Bus.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
@@ -340,12 +366,25 @@ app.post('/api/buses/update-status', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// --- Mechanics CRUD ---
 app.get('/api/mechanics', async (req, res) => res.json(await Mechanic.find()));
 app.post('/api/mechanics', async (req, res) => {
   try {
     const mechanic = new Mechanic(req.body);
     await mechanic.save();
     res.status(201).json(mechanic);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.put('/api/mechanics/:id', async (req, res) => {
+  try {
+    const mechanic = await Mechanic.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(mechanic);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.delete('/api/mechanics/:id', async (req, res) => {
+  try {
+    await Mechanic.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
@@ -821,8 +860,15 @@ app.get('/admin', (req, res) => {
     button { background: #DD0000; color: #fff; font-weight: bold; border: none; cursor: pointer; text-transform: uppercase; }
     button:hover { background: #b30000; }
     .btn-secondary { background: #666; }
+    .btn-action { padding: 3px 6px; font-size: 11px; font-weight: normal; margin-left: 4px; }
+    .btn-edit { background: #666; }
+    .btn-delete { background: #DD0000; }
     .route-group { background: #fafafa; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; }
     .upload-box { background: #fdfdfd; border: 1px dashed #666; padding: 10px; margin-top: 10px; font-size: 12px; }
+    
+    /* Edit Modal Overlay */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: #fff; padding: 20px; border-top: 4px solid #DD0000; border-radius: 4px; width: 350px; }
   </style>
 </head>
 <body>
@@ -830,6 +876,7 @@ app.get('/admin', (req, res) => {
 
   <div class="container">
     <div class="grid">
+      <!-- Drivers Column -->
       <div class="card">
         <h2>Drivers</h2>
         <form id="driverForm">
@@ -846,9 +893,10 @@ app.get('/admin', (req, res) => {
           <button type="button" onclick="uploadCsv('/api/upload/drivers', 'driverCsv')">Upload Drivers CSV</button>
         </div>
 
-        <ul id="driverList" style="margin-top:15px;"></ul>
+        <ul id="driverList" style="margin-top:15px; padding-left:0; list-style:none;"></ul>
       </div>
 
+      <!-- Buses Column -->
       <div class="card">
         <h2>Buses</h2>
         <form id="busForm">
@@ -864,9 +912,10 @@ app.get('/admin', (req, res) => {
           <button type="button" onclick="uploadCsv('/api/upload/buses', 'busCsv')">Upload Buses CSV</button>
         </div>
 
-        <ul id="busList" style="margin-top:15px;"></ul>
+        <ul id="busList" style="margin-top:15px; padding-left:0; list-style:none;"></ul>
       </div>
 
+      <!-- Mechanics Column -->
       <div class="card">
         <h2>Mechanics</h2>
         <form id="mechForm">
@@ -882,10 +931,11 @@ app.get('/admin', (req, res) => {
           <button type="button" onclick="uploadCsv('/api/upload/mechanics', 'mechCsv')">Upload Mechanics CSV</button>
         </div>
 
-        <ul id="mechList" style="margin-top:15px;"></ul>
+        <ul id="mechList" style="margin-top:15px; padding-left:0; list-style:none;"></ul>
       </div>
     </div>
 
+    <!-- Daily Route Schedule Builder Card -->
     <div class="card" style="margin-top: 25px; border-top-color: #DD0000;">
       <h2>Daily Route Schedule Builder</h2>
       
@@ -927,21 +977,142 @@ app.get('/admin', (req, res) => {
     </div>
   </div>
 
+  <!-- Inline Edit Modal -->
+  <div id="editModal" class="modal-overlay">
+    <div class="modal-content">
+      <h3 id="modalTitle" style="margin-top:0; color:#DD0000;">Edit Record</h3>
+      <form id="editForm">
+        <div id="modalFields"></div>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button type="submit" style="flex:1;">Save Changes</button>
+          <button type="button" onclick="closeModal()" class="btn-secondary" style="flex:1;">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
-    let drivers = [], buses = [];
+    let drivers = [], buses = [], mechanics = [];
+    let currentEditType = null, currentEditId = null;
+
     document.getElementById('scheduleDate').value = new Date().toISOString().split('T')[0];
 
     async function fetchData() {
       drivers = await (await fetch('/api/drivers')).json();
       buses = await (await fetch('/api/buses')).json();
-      const mechanics = await (await fetch('/api/mechanics')).json();
+      mechanics = await (await fetch('/api/mechanics')).json();
 
-      document.getElementById('driverList').innerHTML = drivers.map(d => \`<li><b>\${d.name}</b> (\${d.staffId})</li>\`).join('');
-      document.getElementById('busList').innerHTML = buses.map(b => \`<li><b>Bus #\${b.busNumber}</b> \${b.isSpare ? '(Spare)' : ''} \${b.status === 'In Shop' ? '<b style="color:#DD0000;">[IN SHOP]</b>' : ''}</li>\`).join('');
-      document.getElementById('mechList').innerHTML = mechanics.map(m => \`<li><b>\${m.name}</b></li>\`).join('');
+      document.getElementById('driverList').innerHTML = drivers.map(d => \`
+        <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
+          <span><b>\${d.name}</b> (\${d.staffId}) - \${d.phoneNumber}</span>
+          <div>
+            <button class="btn-action btn-edit" onclick="openEdit('driver', '\${d._id}')">✏️ Edit</button>
+            <button class="btn-action btn-delete" onclick="deleteItem('driver', '\${d._id}')">🗑️ Delete</button>
+          </div>
+        </li>
+      \`).join('');
+
+      document.getElementById('busList').innerHTML = buses.map(b => \`
+        <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
+          <span><b>Bus #\${b.busNumber}</b> \${b.isSpare ? '(Spare)' : ''} \${b.status === 'In Shop' ? '<b style="color:#DD0000;">[IN SHOP]</b>' : ''}</span>
+          <div>
+            <button class="btn-action btn-edit" onclick="openEdit('bus', '\${b._id}')">✏️ Edit</button>
+            <button class="btn-action btn-delete" onclick="deleteItem('bus', '\${b._id}')">🗑️ Delete</button>
+          </div>
+        </li>
+      \`).join('');
+
+      document.getElementById('mechList').innerHTML = mechanics.map(m => \`
+        <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
+          <span><b>\${m.name}</b> - \${m.phoneNumber}</span>
+          <div>
+            <button class="btn-action btn-edit" onclick="openEdit('mechanic', '\${m._id}')">✏️ Edit</button>
+            <button class="btn-action btn-delete" onclick="deleteItem('mechanic', '\${m._id}')">🗑️ Delete</button>
+          </div>
+        </li>
+      \`).join('');
 
       loadSchedule();
     }
+
+    async function deleteItem(type, id) {
+      if (!confirm(\`Are you sure you want to delete this \${type}?\`)) return;
+      const endpoint = type === 'driver' ? '/api/drivers/' : type === 'bus' ? '/api/buses/' : '/api/mechanics/';
+      await fetch(endpoint + id, { method: 'DELETE' });
+      fetchData();
+    }
+
+    function openEdit(type, id) {
+      currentEditType = type;
+      currentEditId = id;
+      const modalFields = document.getElementById('modalFields');
+
+      if (type === 'driver') {
+        const item = drivers.find(d => d._id === id);
+        document.getElementById('modalTitle').innerText = 'Edit Driver';
+        modalFields.innerHTML = \`
+          <input type="text" id="mDName" value="\${item.name}" placeholder="Name" required style="width:100%; margin-bottom:8px;" />
+          <input type="text" id="mDStaffId" value="\${item.staffId}" placeholder="Staff ID" required style="width:100%; margin-bottom:8px;" />
+          <input type="text" id="mDPhone" value="\${item.phoneNumber}" placeholder="Phone" required style="width:100%; margin-bottom:8px;" />
+        \`;
+      } else if (type === 'bus') {
+        const item = buses.find(b => b._id === id);
+        document.getElementById('modalTitle').innerText = 'Edit Bus';
+        modalFields.innerHTML = \`
+          <input type="text" id="mBNumber" value="\${item.busNumber}" placeholder="Bus Number" required style="width:100%; margin-bottom:8px;" />
+          <label style="font-size:12px;"><input type="checkbox" id="mBSpare" \${item.isSpare ? 'checked' : ''} /> Is Spare Bus</label>
+        \`;
+      } else if (type === 'mechanic') {
+        const item = mechanics.find(m => m._id === id);
+        document.getElementById('modalTitle').innerText = 'Edit Mechanic';
+        modalFields.innerHTML = \`
+          <input type="text" id="mMName" value="\${item.name}" placeholder="Name" required style="width:100%; margin-bottom:8px;" />
+          <input type="text" id="mMPhone" value="\${item.phoneNumber}" placeholder="Phone" required style="width:100%; margin-bottom:8px;" />
+        \`;
+      }
+
+      document.getElementById('editModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+      document.getElementById('editModal').style.display = 'none';
+    }
+
+    document.getElementById('editForm').onsubmit = async (e) => {
+      e.preventDefault();
+      let payload = {};
+      let endpoint = '';
+
+      if (currentEditType === 'driver') {
+        endpoint = '/api/drivers/' + currentEditId;
+        payload = {
+          name: document.getElementById('mDName').value,
+          staffId: document.getElementById('mDStaffId').value,
+          phoneNumber: document.getElementById('mDPhone').value
+        };
+      } else if (currentEditType === 'bus') {
+        endpoint = '/api/buses/' + currentEditId;
+        payload = {
+          busNumber: document.getElementById('mBNumber').value,
+          isSpare: document.getElementById('mBSpare').checked
+        };
+      } else if (currentEditType === 'mechanic') {
+        endpoint = '/api/mechanics/' + currentEditId;
+        payload = {
+          name: document.getElementById('mMName').value,
+          phoneNumber: document.getElementById('mMPhone').value
+        };
+      }
+
+      await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      closeModal();
+      fetchData();
+    };
 
     async function uploadCsv(endpoint, inputId) {
       const fileInput = document.getElementById(inputId);
