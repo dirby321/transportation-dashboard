@@ -170,6 +170,7 @@ function renderHeader(activePage, showFullscreen = false) {
       <a href="/dispatch" class="nav-btn ${activePage === 'dispatch' ? 'nav-active' : ''}">📱 Driver Kiosk</a>
       <a href="/admin" class="nav-btn ${activePage === 'admin' ? 'nav-active' : ''}">📋 Admin Portal</a>
       <a href="/mechanics" class="nav-btn ${activePage === 'mechanics' ? 'nav-active' : ''}">🛠️ Shop Portal</a>
+      <a href="/reports" class="nav-btn ${activePage === 'reports' ? 'nav-active' : ''}">📊 EOD Reports</a>
     </div>
   </header>
   `;
@@ -595,6 +596,81 @@ app.post('/api/schedule/copy-forward', async (req, res) => {
     );
     res.json(newSchedule);
   } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// ================= END OF DAY REPORT APIs =================
+
+app.get('/api/reports/daily/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const schedule = await DailySchedule.findOne({ date })
+      .populate('amRoutes.driverId amRoutes.busId')
+      .populate('pmRoutes.driverId pmRoutes.busId')
+      .populate('fieldTrips.driverId fieldTrips.busId');
+
+    if (!schedule) {
+      return res.status(404).json({ error: `No dispatch data recorded for ${date}.` });
+    }
+
+    const allRoutes = [
+      ...(schedule.amRoutes || []).map(r => ({ ...r.toObject(), categoryTag: 'AM' })),
+      ...(schedule.pmRoutes || []).map(r => ({ ...r.toObject(), categoryTag: 'PM' })),
+      ...(schedule.fieldTrips || []).map(r => ({ ...r.toObject(), categoryTag: 'Field Trip' }))
+    ];
+
+    const totalRoutes = allRoutes.length;
+    const completedRoutes = allRoutes.filter(r => r.status && r.status.startsWith('Returned')).length;
+    const delayedRoutes = allRoutes.filter(r => r.status === 'Delayed').length;
+    const unassignedRoutes = allRoutes.filter(r => !r.driverId || !r.busId).length;
+    const onTimeRate = totalRoutes > 0 ? Math.round(((completedRoutes - delayedRoutes) / totalRoutes) * 100) : 0;
+
+    res.json({
+      date,
+      summary: {
+        totalRoutes,
+        completedRoutes,
+        delayedRoutes,
+        unassignedRoutes,
+        onTimeRate: Math.max(0, onTimeRate)
+      },
+      routes: allRoutes
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/reports/daily/:date/export', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const schedule = await DailySchedule.findOne({ date })
+      .populate('amRoutes.driverId amRoutes.busId')
+      .populate('pmRoutes.driverId pmRoutes.busId')
+      .populate('fieldTrips.driverId fieldTrips.busId');
+
+    if (!schedule) {
+      return res.status(404).send('No data found for this date.');
+    }
+
+    const formatRow = (r, slot) => {
+      const driver = r.driverId ? r.driverId.name : 'Unassigned';
+      const staffId = r.driverId ? r.driverId.staffId : 'N/A';
+      const bus = r.busId ? r.busId.busNumber : 'Unassigned';
+      return `"${date}","${slot}","${r.routeName}","${r.scheduledTime || ''}","${driver}","${staffId}","${bus}","${r.status}","${r.checkInTime || ''}","${r.returnTime || ''}"\n`;
+    };
+
+    let csvContent = 'Date,Slot,Route Name,Scheduled Time,Driver Name,Staff ID,Bus Number,Final Status,Check-In Time,Return Time\n';
+
+    (schedule.amRoutes || []).forEach(r => { csvContent += formatRow(r, 'AM'); });
+    (schedule.pmRoutes || []).forEach(r => { csvContent += formatRow(r, 'PM'); });
+    (schedule.fieldTrips || []).forEach(r => { csvContent += formatRow(r, 'Field Trip'); });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="parkway_dispatch_report_${date}.csv"`);
+    res.send(csvContent);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
 });
 
 // ================= VIEW-ONLY DISPATCH MONITOR DASHBOARD =================
@@ -1167,7 +1243,7 @@ app.get('/admin', (req, res) => {
         <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
           <span><b>Bus #\${b.busNumber}</b> \${b.isSpare ? '(Spare)' : ''} \${b.status === 'In Shop' ? '<b style="color:#DD0000;">[IN SHOP]</b>' : ''}</span>
           <div>
-            <button class="btn-action btn-edit" onclick="openEdit('bus', '\${b._id}')">✏️️ Edit</button>
+            <button class="btn-action btn-edit" onclick="openEdit('bus', '\${b._id}')">✏️ Edit</button>
             <button class="btn-action btn-delete" onclick="deleteItem('bus', '\${b._id}')">🗑️ Delete</button>
           </div>
         </li>
@@ -1513,7 +1589,7 @@ app.get('/mechanics', (req, res) => {
   ${renderHeader('mechanics', false)}
 
   <div class="container">
-    <h2>🛠️ Fleet Maintenance & Shop Portal</h2>
+    <h2>🛠️️ Fleet Maintenance & Shop Portal</h2>
     <div id="busGrid" class="grid"></div>
   </div>
 
@@ -1578,6 +1654,124 @@ app.get('/mechanics', (req, res) => {
     }
 
     loadBuses();
+  </script>
+</body>
+</html>
+  `);
+});
+
+// ================= HISTORICAL END-OF-DAY REPORT PAGE =================
+app.get('/reports', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Parkway Schools - End of Day Report</title>
+  <style>
+    ${COMMON_CSS}
+    .container { padding: 20px 30px; }
+    .report-card { background: #fff; padding: 20px; border-radius: 4px; border-top: 4px solid #DD0000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 15px 0; }
+    .kpi-box { background: #fafafa; border: 1px solid #ddd; padding: 12px; text-align: center; border-radius: 3px; }
+    .kpi-value { font-size: 22px; font-weight: bold; color: #DD0000; }
+    .kpi-label { font-size: 11px; text-transform: uppercase; color: #666; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; }
+    th { background: #f0f0f0; color: #000; font-weight: bold; }
+    tr:nth-child(even) { background: #fafafa; }
+    @media print { header, .toolbar, button { display: none !important; } }
+  </style>
+</head>
+<body>
+  ${renderHeader('reports', false)}
+
+  <div class="container">
+    <div class="report-card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0; color:#DD0000; font-size:18px;">📊 END OF DAY DISPATCH REPORT</h2>
+        <div>
+          <button onclick="window.print()" class="nav-btn" style="background:#666;">🖨 Print Report</button>
+          <button onclick="downloadCSV()" class="nav-btn">⬇️ Export CSV</button>
+        </div>
+      </div>
+
+      <div style="margin-top:15px; display:flex; gap:10px; align-items:center;">
+        <label style="font-weight:bold; font-size:13px;">Select Report Date: 
+          <input type="date" id="reportDate" onchange="loadReport()" style="padding:4px; font-family:'Trebuchet MS';" />
+        </label>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-box"><div class="kpi-value" id="kpiTotal">0</div><div class="kpi-label">Total Routes</div></div>
+        <div class="kpi-box"><div class="kpi-value" id="kpiCompleted" style="color:#2e7d32;">0</div><div class="kpi-label">Completed</div></div>
+        <div class="kpi-box"><div class="kpi-value" id="kpiDelayed" style="color:#DD0000;">0</div><div class="kpi-label">Delayed</div></div>
+        <div class="kpi-box"><div class="kpi-value" id="kpiUnassigned" style="color:#FF9F3D;">0</div><div class="kpi-label">Unassigned</div></div>
+        <div class="kpi-box"><div class="kpi-value" id="kpiRate" style="color:#000;">0%</div><div class="kpi-label">On-Time Rate</div></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Slot</th>
+            <th>Route Name</th>
+            <th>Scheduled Time</th>
+            <th>Driver</th>
+            <th>Bus Number</th>
+            <th>Check-In Time</th>
+            <th>Return Time</th>
+            <th>Final Status</th>
+          </tr>
+        </thead>
+        <tbody id="reportTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('reportDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+
+    async function loadReport() {
+      const date = document.getElementById('reportDate').value;
+      const res = await fetch('/api/reports/daily/' + date);
+      const tableBody = document.getElementById('reportTableBody');
+
+      if (!res.ok) {
+        document.getElementById('kpiTotal').innerText = '0';
+        document.getElementById('kpiCompleted').innerText = '0';
+        document.getElementById('kpiDelayed').innerText = '0';
+        document.getElementById('kpiUnassigned').innerText = '0';
+        document.getElementById('kpiRate').innerText = '0%';
+        tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666;">No dispatch records found for selected date.</td></tr>';
+        return;
+      }
+
+      const data = await res.json();
+      document.getElementById('kpiTotal').innerText = data.summary.totalRoutes;
+      document.getElementById('kpiCompleted').innerText = data.summary.completedRoutes;
+      document.getElementById('kpiDelayed').innerText = data.summary.delayedRoutes;
+      document.getElementById('kpiUnassigned').innerText = data.summary.unassignedRoutes;
+      document.getElementById('kpiRate').innerText = data.summary.onTimeRate + '%';
+
+      tableBody.innerHTML = data.routes.map(r => \`
+        <tr>
+          <td><b>\${r.categoryTag}</b></td>
+          <td>\${r.routeName}</td>
+          <td>\${r.scheduledTime || 'N/A'}</td>
+          <td>\${r.driverId ? r.driverId.name : '<span style="color:#DD0000;">Unassigned</span>'}</td>
+          <td>\${r.busId ? 'Bus #' + r.busId.busNumber : '<span style="color:#DD0000;">Unassigned</span>'}</td>
+          <td>\${r.checkInTime || 'N/A'}</td>
+          <td>\${r.returnTime || 'N/A'}</td>
+          <td><b>\${r.status}</b></td>
+        </tr>
+      \`).join('');
+    }
+
+    function downloadCSV() {
+      const date = document.getElementById('reportDate').value;
+      window.location.href = '/api/reports/daily/' + date + '/export';
+    }
+
+    loadReport();
   </script>
 </body>
 </html>
