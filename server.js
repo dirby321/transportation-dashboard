@@ -8,6 +8,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: 'uploads/' });
 
+// Force process timezone to Central Time
+process.env.TZ = 'America/Chicago';
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -27,6 +30,30 @@ const connectWithRetry = () => {
 };
 
 connectWithRetry();
+
+// ================= TIME HELPER FUNCTIONS =================
+function getCentralTimeStr() {
+  return new Date().toLocaleTimeString('en-US', {
+    timeZone: 'America/Chicago',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
+function formatTo12Hour(time24) {
+  if (!time24) return 'N/A';
+  if (time24.includes('AM') || time24.includes('PM')) return time24;
+  const parts = time24.split(':');
+  if (parts.length < 2) return time24;
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  if (isNaN(hours) || isNaN(minutes)) return time24;
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const hours12 = hours % 12 || 12;
+  const minStr = minutes < 10 ? '0' + minutes : minutes;
+  return `${hours12}:${minStr} ${period}`;
+}
 
 // ================= SCHEMAS =================
 const Driver = mongoose.model('Driver', new mongoose.Schema({
@@ -71,12 +98,15 @@ const DailySchedule = mongoose.model('DailySchedule', new mongoose.Schema({
 
 // ================= AUTOMATED DELAYED ROUTE MONITOR =================
 function startDelayedRouteScanner() {
-  console.log('Starting background delayed route scanner...');
+  console.log('Starting background delayed route scanner (Central Time)...');
   setInterval(async () => {
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const options = { timeZone: 'America/Chicago' };
+      const todayStr = new Date().toLocaleDateString('en-CA', options);
       const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      
+      const centralNow = new Date(now.toLocaleString('en-US', options));
+      const currentMinutes = centralNow.getHours() * 60 + centralNow.getMinutes();
 
       const schedule = await DailySchedule.findOne({ date: todayStr });
       if (!schedule) return;
@@ -329,7 +359,7 @@ app.delete('/api/drivers/:id', async (req, res) => {
   try {
     const driverId = req.params.id;
     const force = req.query.force === 'true';
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
     const futureSchedules = await DailySchedule.find({
       date: { $gte: todayStr },$or: [
@@ -391,7 +421,7 @@ app.delete('/api/buses/:id', async (req, res) => {
   try {
     const busId = req.params.id;
     const force = req.query.force === 'true';
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
     const futureSchedules = await DailySchedule.find({
       date: { $gte: todayStr },$or: [
@@ -514,7 +544,7 @@ app.post('/api/schedule/update-status', async (req, res) => {
 
     if (!route) return res.status(404).json({ error: 'Route item not found' });
 
-    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const nowStr = getCentralTimeStr();
 
     route.status = status;
     if (status === 'En Route') {
@@ -620,7 +650,7 @@ app.get('/dashboard', (req, res) => {
         <option value="fieldTrips">Field Trips</option>
       </select>
     </label>
-    <span style="margin-left: auto; font-size:10px; color:#666;">Auto-refreshes every 10s</span>
+    <span style="margin-left: auto; font-size:10px; color:#666;">Auto-refreshes every 10s (Central Time)</span>
   </div>
 
   <div class="kiosk-grid">
@@ -639,7 +669,7 @@ app.get('/dashboard', (req, res) => {
   </div>
 
   <script>
-    document.getElementById('dashDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('dashDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
     function toggleFullScreen() {
       if (!document.fullscreenElement) {
@@ -647,6 +677,20 @@ app.get('/dashboard', (req, res) => {
       } else {
         if (document.exitFullscreen) document.exitFullscreen();
       }
+    }
+
+    function formatTo12Hour(time24) {
+      if (!time24) return 'N/A';
+      if (time24.includes('AM') || time24.includes('PM')) return time24;
+      const parts = time24.split(':');
+      if (parts.length < 2) return time24;
+      const hours = parseInt(parts[0], 10);
+      const minutes = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes)) return time24;
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hours12 = hours % 12 || 12;
+      const minStr = minutes < 10 ? '0' + minutes : minutes;
+      return hours12 + ':' + minStr + ' ' + period;
     }
 
     async function loadDashData() {
@@ -692,7 +736,7 @@ app.get('/dashboard', (req, res) => {
               \${isDelayed ? '<span class="badge badge-delayed">⚠️ Delayed</span>' : ''}
             </div>
             <div style="color:#444;">👤 \${driverName} | 🚌 \${busNum}</div>
-            <div style="font-weight:bold; color:#666;">⏰ \${r.scheduledTime || 'N/A'}</div>
+            <div style="font-weight:bold; color:#666;">⏰ \${formatTo12Hour(r.scheduledTime)}</div>
           \`;
           colPending.appendChild(card);
         } else if (r.status === 'En Route') {
@@ -813,7 +857,7 @@ app.get('/dispatch', (req, res) => {
   </div>
 
   <script>
-    document.getElementById('kioskDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('kioskDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
     function toggleFullScreen() {
       if (!document.fullscreenElement) {
@@ -821,6 +865,20 @@ app.get('/dispatch', (req, res) => {
       } else {
         if (document.exitFullscreen) document.exitFullscreen();
       }
+    }
+
+    function formatTo12Hour(time24) {
+      if (!time24) return 'N/A';
+      if (time24.includes('AM') || time24.includes('PM')) return time24;
+      const parts = time24.split(':');
+      if (parts.length < 2) return time24;
+      const hours = parseInt(parts[0], 10);
+      const minutes = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes)) return time24;
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hours12 = hours % 12 || 12;
+      const minStr = minutes < 10 ? '0' + minutes : minutes;
+      return hours12 + ':' + minStr + ' ' + period;
     }
 
     function filterByDriver() {
@@ -1088,7 +1146,7 @@ app.get('/admin', (req, res) => {
     let drivers = [], buses = [], mechanics = [];
     let currentEditType = null, currentEditId = null;
 
-    document.getElementById('scheduleDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('scheduleDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
     async function fetchData() {
       drivers = await (await fetch('/api/drivers')).json();
@@ -1109,7 +1167,7 @@ app.get('/admin', (req, res) => {
         <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
           <span><b>Bus #\${b.busNumber}</b> \${b.isSpare ? '(Spare)' : ''} \${b.status === 'In Shop' ? '<b style="color:#DD0000;">[IN SHOP]</b>' : ''}</span>
           <div>
-            <button class="btn-action btn-edit" onclick="openEdit('bus', '\${b._id}')">✏️ Edit</button>
+            <button class="btn-action btn-edit" onclick="openEdit('bus', '\${b._id}')">✏️️ Edit</button>
             <button class="btn-action btn-delete" onclick="deleteItem('bus', '\${b._id}')">🗑️ Delete</button>
           </div>
         </li>
