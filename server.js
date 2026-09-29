@@ -766,10 +766,10 @@ app.get('/dispatch', (req, res) => {
     }
     .route-card-delayed { border: 1.5px solid #DD0000; border-left: 5px solid #DD0000; background: #fff0f0; }
     .route-card-title { font-weight: bold; font-size: 12px; color: #DD0000; }
-    button, select { font-family: 'Trebuchet MS', sans-serif; font-size: 10px; padding: 3px 6px; font-weight: bold; border-radius: 2px; cursor: pointer; }
-    .btn-checkin { background: #DD0000; color: #fff; border: none; }
+    button, select, input[type="text"] { font-family: 'Trebuchet MS', sans-serif; font-size: 10px; padding: 3px 6px; font-weight: bold; border-radius: 2px; }
+    .btn-checkin { background: #DD0000; color: #fff; border: none; cursor: pointer; }
     .btn-checkin:hover { background: #b30000; }
-    .btn-undo { background: #666; color: #fff; border: none; }
+    .btn-undo { background: #666; color: #fff; border: none; cursor: pointer; }
     .btn-undo:hover { background: #444; }
     .badge { background: #eee; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: bold; }
     .badge-slot { background: #666; color: #fff; text-transform: uppercase; }
@@ -790,6 +790,9 @@ app.get('/dispatch', (req, res) => {
         <option value="pmRoutes">PM Routes</option>
         <option value="fieldTrips">Field Trips</option>
       </select>
+    </label>
+    <label style="font-weight: bold; font-size: 12px;">Search Driver: 
+      <input type="text" id="driverSearch" placeholder="Type driver name..." oninput="filterByDriver()" style="padding:2px; font-weight:normal;" />
     </label>
     <button onclick="loadKioskData()" class="btn-undo">🔄 Refresh</button>
   </div>
@@ -818,6 +821,19 @@ app.get('/dispatch', (req, res) => {
       } else {
         if (document.exitFullscreen) document.exitFullscreen();
       }
+    }
+
+    function filterByDriver() {
+      const searchVal = document.getElementById('driverSearch').value.toLowerCase();
+      const cards = document.querySelectorAll('.route-card');
+      cards.forEach(card => {
+        const driverText = card.getAttribute('data-driver') || '';
+        if (driverText.toLowerCase().includes(searchVal)) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
     }
 
     async function loadKioskData() {
@@ -853,6 +869,7 @@ app.get('/dispatch', (req, res) => {
         
         const isDelayed = r.status === 'Delayed';
         card.className = 'route-card ' + (isDelayed ? 'route-card-delayed' : '');
+        card.setAttribute('data-driver', driverName);
 
         if (r.status === 'Pending' || isDelayed) {
           cPending++;
@@ -901,6 +918,8 @@ app.get('/dispatch', (req, res) => {
       document.getElementById('countPending').innerText = cPending;
       document.getElementById('countEnRoute').innerText = cEnRoute;
       document.getElementById('countReturned').innerText = cReturned;
+
+      filterByDriver();
     }
 
     async function updateStatus(routeId, status) {
