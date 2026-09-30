@@ -42,17 +42,17 @@ function getCentralTimeStr() {
 }
 
 function formatTo12Hour(time24) {
-  if (!time24) return 'N/A';
+  if (!time24) return '';
   if (time24.includes('AM') || time24.includes('PM')) return time24;
   const parts = time24.split(':');
   if (parts.length < 2) return time24;
-  const hours = parseInt(parts[0], 10);
+  let hours = parseInt(parts[0], 10);
   const minutes = parseInt(parts[1], 10);
   if (isNaN(hours) || isNaN(minutes)) return time24;
   const period = hours >= 12 ? 'PM' : 'AM';
-  const hours12 = hours % 12 || 12;
+  hours = hours % 12 || 12;
   const minStr = minutes < 10 ? '0' + minutes : minutes;
-  return `${hours12}:${minStr} ${period}`;
+  return `${hours}:${minStr} ${period}`;
 }
 
 // ================= SCHEMAS =================
@@ -228,7 +228,7 @@ const COMMON_CSS = `
 app.get('/api/samples/district-field-trips', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="district_field_trips_sample.csv"');
-  res.send("Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Account Code Check\n2026-10-05,Athletic,Parkway Central,Varsity Football,Eureka High,15:30,21:00,2,John Doe,Equipment trailer attached,314-555-0199,100-2710-6341,15.0,21.5,12040,12095,Verified\n2026-10-05,Academic,Parkway West,Band,Powell Hall,08:30,14:00,1,Jane Smith,Instrument storage needed,314-555-0188,100-2710-6342,8.5,14.0,45100,45142,Pending\n");
+  res.send("Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Account Code Check\n2026-10-05,Athletic,Parkway Central,Varsity Football,Eureka High,3:30 PM,9:00 PM,2,John Doe,Equipment trailer attached,314-555-0199,100-2710-6341,15.0,21.5,12040,12095,Verified\n2026-10-05,Academic,Parkway West,Band,Powell Hall,8:30 AM,2:00 PM,1,Jane Smith,Instrument storage needed,314-555-0188,100-2710-6342,8.5,14.0,45100,45142,Pending\n");
 });
 
 app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) => {
@@ -256,8 +256,8 @@ app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) =
               school: row['School'] || '',
               classTeam: row['Class / Team'] || '',
               destination: row['Destination'] || '',
-              pickupTime: row['Pickup Time'] || '',
-              dropOffTime: row['Drop Off Time'] || '',
+              pickupTime: formatTo12Hour(row['Pickup Time'] || ''),
+              dropOffTime: formatTo12Hour(row['Drop Off Time'] || ''),
               numBuses: parseInt(row['# of Buses'] || 1, 10),
               driverName: row['Driver Name'] || '',
               notes: row['Notes'] || '',
@@ -287,7 +287,17 @@ app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) =
 
 app.get('/api/district-field-trips/:date', async (req, res) => {
   try {
-    const trips = await FieldTripAudit.find({ date: req.params.date });
+    const trips = await FieldTripAudit.find({ date: req.params.date }).sort({ pickupTime: 1 });
+    res.json(trips);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/district-field-trips/month/:yearMonth', async (req, res) => {
+  try {
+    const { yearMonth } = req.params;
+    const trips = await FieldTripAudit.find({ date: { $regex: `^${yearMonth}` } }).sort({ date: 1, pickupTime: 1 });
     res.json(trips);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -310,7 +320,7 @@ app.put('/api/district-field-trips/:id', async (req, res) => {
     if (!trip) return res.status(404).json({ error: 'Record not found' });
 
     Object.assign(trip, req.body);
-    await trip.save(); // pre-save middleware updates totalHours, totalMiles, charge
+    await trip.save();
     res.json(trip);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -329,12 +339,12 @@ app.delete('/api/district-field-trips/:id', async (req, res) => {
 app.get('/api/district-field-trips/export/:date', async (req, res) => {
   try {
     const { date } = req.params;
-    const trips = await FieldTripAudit.find({ date: { $regex: `^${date}` } });
+    const trips = await FieldTripAudit.find({ date: { $regex: `^${date}` } }).sort({ date: 1 });
 
     let csvContent = 'Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Total Hours,Total Miles,Charge,Account Code Check\n';
 
     trips.forEach(t => {
-      csvContent += `"${t.date}","${t.tripType}","${t.school}","${t.classTeam}","${t.destination}","${t.pickupTime}","${t.dropOffTime}","${t.numBuses}","${t.driverName}","${t.notes}","${t.coachCommLine}","${t.accountCode}","${t.startHours}","${t.endHours}","${t.startMiles}","${t.endMiles}","${t.totalHours}","${t.totalMiles}","$${t.charge.toFixed(2)}","${t.accountCodeCheck}"\n`;
+      csvContent += `"${t.date}","${t.tripType}","${t.school}","${t.classTeam}","${t.destination}","${formatTo12Hour(t.pickupTime)}","${formatTo12Hour(t.dropOffTime)}","${t.numBuses}","${t.driverName}","${t.notes}","${t.coachCommLine}","${t.accountCode}","${t.startHours}","${t.endHours}","${t.startMiles}","${t.endMiles}","${t.totalHours}","${t.totalMiles}","$${t.charge.toFixed(2)}","${t.accountCodeCheck}"\n`;
     });
 
     res.setHeader('Content-Type', 'text/csv');
@@ -565,7 +575,7 @@ app.post('/api/schedule/update-status', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// ================= FIELD TRIPS PORTAL PAGE (AUTO-SAVE GRID) =================
+// ================= FIELD TRIPS PORTAL PAGE (12-HOUR AM/PM FORMAT) =================
 app.get('/field-trips', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -580,7 +590,7 @@ app.get('/field-trips', (req, res) => {
     .grid-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
     .grid-table th, .grid-table td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
     .grid-table th { background: #f0f0f0; font-weight: bold; position: sticky; top: 0; }
-    input[type="text"], input[type="number"], select { width: 95%; font-family: 'Trebuchet MS'; font-size: 10px; padding: 2px 4px; border: 1px solid #ccc; }
+    input[type="text"], input[type="number"], input[type="date"], select { width: 95%; font-family: 'Trebuchet MS'; font-size: 10px; padding: 2px 4px; border: 1px solid #ccc; }
     .btn-del { background: #DD0000; color: #fff; border: none; padding: 3px 6px; cursor: pointer; font-weight: bold; }
     .kpi-row { display: flex; gap: 15px; margin: 10px 0; font-size: 12px; font-weight: bold; }
     .kpi-badge { background: #eee; padding: 4px 8px; border-radius: 3px; border-left: 3px solid #DD0000; }
@@ -608,9 +618,21 @@ app.get('/field-trips', (req, res) => {
       </div>
 
       <div style="display:flex; gap:15px; align-items:center; margin-bottom:10px;">
-        <label style="font-weight:bold; font-size:12px;">Select Date: 
+        <label style="font-weight:bold; font-size:12px;">View Mode: 
+          <select id="viewMode" onchange="toggleViewMode()" style="padding:2px; font-family:'Trebuchet MS';">
+            <option value="day">Single Day</option>
+            <option value="month">Full Month</option>
+          </select>
+        </label>
+
+        <label id="dayPickerContainer" style="font-weight:bold; font-size:12px;">Date: 
           <input type="date" id="tripDate" onchange="loadTrips()" style="padding:2px; font-family:'Trebuchet MS';" />
         </label>
+
+        <label id="monthPickerContainer" style="font-weight:bold; font-size:12px; display:none;">Month: 
+          <input type="month" id="tripMonth" onchange="loadTrips()" style="padding:2px; font-family:'Trebuchet MS';" />
+        </label>
+
         <button onclick="addEmptyTripRow()" class="nav-btn" style="background:#2e7d32;">+ Add New Field Trip</button>
       </div>
 
@@ -625,12 +647,13 @@ app.get('/field-trips', (req, res) => {
         <table class="grid-table">
           <thead>
             <tr>
+              <th style="min-width:105px;">Date</th>
               <th>Type</th>
               <th>School</th>
               <th>Class/Team</th>
               <th>Destination</th>
-              <th>Pickup</th>
-              <th>Dropoff</th>
+              <th style="min-width:65px;">Pickup</th>
+              <th style="min-width:65px;">Dropoff</th>
               <th>Buses</th>
               <th>Driver Name</th>
               <th>Account Code</th>
@@ -652,11 +675,56 @@ app.get('/field-trips', (req, res) => {
   </div>
 
   <script>
-    document.getElementById('tripDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    document.getElementById('tripDate').value = todayStr;
+    document.getElementById('tripMonth').value = todayStr.substring(0, 7);
+
+    function format12HourTime(timeStr) {
+      if (!timeStr) return '';
+      if (timeStr.includes('AM') || timeStr.includes('PM')) return timeStr;
+      
+      const parts = timeStr.split(':');
+      if (parts.length < 2) return timeStr;
+      
+      let hours = parseInt(parts[0], 10);
+      const minutes = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes)) return timeStr;
+      
+      const period = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      const minStr = minutes < 10 ? '0' + minutes : minutes;
+      
+      return hours + ':' + minStr + ' ' + period;
+    }
+
+    function toggleViewMode() {
+      const mode = document.getElementById('viewMode').value;
+      const dayContainer = document.getElementById('dayPickerContainer');
+      const monthContainer = document.getElementById('monthPickerContainer');
+
+      if (mode === 'day') {
+        dayContainer.style.display = 'inline-block';
+        monthContainer.style.display = 'none';
+      } else {
+        dayContainer.style.display = 'none';
+        monthContainer.style.display = 'inline-block';
+      }
+      loadTrips();
+    }
 
     async function loadTrips() {
-      const date = document.getElementById('tripDate').value;
-      const res = await fetch('/api/district-field-trips/' + date);
+      const mode = document.getElementById('viewMode').value;
+      let endpoint = '';
+
+      if (mode === 'day') {
+        const date = document.getElementById('tripDate').value;
+        endpoint = '/api/district-field-trips/' + date;
+      } else {
+        const month = document.getElementById('tripMonth').value;
+        endpoint = '/api/district-field-trips/month/' + month;
+      }
+
+      const res = await fetch(endpoint);
       const trips = await res.json();
 
       const tbody = document.getElementById('tripTableBody');
@@ -672,12 +740,25 @@ app.get('/field-trips', (req, res) => {
         const row = document.createElement('tr');
         row.id = 'row_' + t._id;
         row.innerHTML = \`
+          <td><input type="date" value="\${t.date}" onblur="autoSave('\${t._id}', 'date', this.value)" style="width:100px;" /></td>
           <td><input type="text" value="\${t.tripType || ''}" onblur="autoSave('\${t._id}', 'tripType', this.value)" /></td>
           <td><input type="text" value="\${t.school || ''}" onblur="autoSave('\${t._id}', 'school', this.value)" /></td>
           <td><input type="text" value="\${t.classTeam || ''}" onblur="autoSave('\${t._id}', 'classTeam', this.value)" /></td>
           <td><input type="text" value="\${t.destination || ''}" onblur="autoSave('\${t._id}', 'destination', this.value)" /></td>
-          <td><input type="text" value="\${t.pickupTime || ''}" onblur="autoSave('\${t._id}', 'pickupTime', this.value)" style="width:45px;" /></td>
-          <td><input type="text" value="\${t.dropOffTime || ''}" onblur="autoSave('\${t._id}', 'dropOffTime', this.value)" style="width:45px;" /></td>
+          <td>
+            <input type="text" 
+                   value="\${format12HourTime(t.pickupTime || '')}" 
+                   onblur="this.value = format12HourTime(this.value); autoSave('\${t._id}', 'pickupTime', this.value)" 
+                   placeholder="3:30 PM"
+                   style="width:60px;" />
+          </td>
+          <td>
+            <input type="text" 
+                   value="\${format12HourTime(t.dropOffTime || '')}" 
+                   onblur="this.value = format12HourTime(this.value); autoSave('\${t._id}', 'dropOffTime', this.value)" 
+                   placeholder="9:00 PM"
+                   style="width:60px;" />
+          </td>
           <td><input type="number" value="\${t.numBuses || 1}" onblur="autoSave('\${t._id}', 'numBuses', this.value)" style="width:35px;" /></td>
           <td><input type="text" value="\${t.driverName || ''}" onblur="autoSave('\${t._id}', 'driverName', this.value)" /></td>
           <td><input type="text" value="\${t.accountCode || ''}" onblur="autoSave('\${t._id}', 'accountCode', this.value)" /></td>
@@ -769,7 +850,11 @@ app.get('/field-trips', (req, res) => {
     }
 
     async function addEmptyTripRow() {
-      const date = document.getElementById('tripDate').value;
+      const mode = document.getElementById('viewMode').value;
+      const date = mode === 'day' 
+        ? document.getElementById('tripDate').value 
+        : (document.getElementById('tripMonth').value + '-01');
+
       await fetch('/api/district-field-trips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -807,8 +892,9 @@ app.get('/field-trips', (req, res) => {
     }
 
     function exportTripsCSV() {
-      const date = document.getElementById('tripDate').value;
-      window.location.href = '/api/district-field-trips/export/' + date;
+      const mode = document.getElementById('viewMode').value;
+      const dateVal = mode === 'day' ? document.getElementById('tripDate').value : document.getElementById('tripMonth').value;
+      window.location.href = '/api/district-field-trips/export/' + dateVal;
     }
 
     loadTrips();
@@ -1236,7 +1322,7 @@ app.get('/admin', (req, res) => {
 
         <div class="upload-box">
           <b>📁 Batch Upload Drivers (CSV):</b><br/>
-          <a href="/api/samples/drivers" style="color:#DD0000; font-weight:bold;">⬇️ Download Sample CSV</a>
+          <a href="/api/samples/drivers" style="color:#DD0000; font-weight:bold;">⬇️️ Download Sample CSV</a>
           <input type="file" id="driverCsv" accept=".csv" style="margin-top:6px;" />
           <button type="button" onclick="uploadCsv('/api/upload/drivers', 'driverCsv')">Upload Drivers CSV</button>
         </div>
@@ -1350,7 +1436,7 @@ app.get('/admin', (req, res) => {
         <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
           <span><b>\${d.name}</b> (\${d.staffId}) - \${d.phoneNumber}</span>
           <div>
-            <button class="btn-action btn-edit" onclick="openEdit('driver', '\${d._id}')">✏️️ Edit</button>
+            <button class="btn-action btn-edit" onclick="openEdit('driver', '\${d._id}')">✏️ Edit</button>
             <button class="btn-action btn-delete" onclick="deleteItem('driver', '\${d._id}')">🗑️ Delete</button>
           </div>
         </li>
@@ -1371,7 +1457,7 @@ app.get('/admin', (req, res) => {
           <span><b>\${m.name}</b> - \${m.phoneNumber}</span>
           <div>
             <button class="btn-action btn-edit" onclick="openEdit('mechanic', '\${m._id}')">✏️ Edit</button>
-            <button class="btn-action btn-delete" onclick="deleteItem('mechanic', '\${m._id}')">🗑️ Delete</button>
+            <button class="btn-action btn-delete" onclick="deleteItem('mechanic', '\${m._id}')">🗑️️ Delete</button>
           </div>
         </li>
       \`).join('');
@@ -1808,7 +1894,7 @@ app.get('/reports', (req, res) => {
         <h2 style="margin:0; color:#DD0000; font-size:18px;">📊 END OF DAY DISPATCH REPORT</h2>
         <div>
           <button onclick="window.print()" class="nav-btn" style="background:#666;">🖨 Print Report</button>
-          <button onclick="downloadCSV()" class="nav-btn">⬇️ Export CSV</button>
+          <button onclick="downloadCSV()" class="nav-btn">⬇ Export CSV</button>
         </div>
       </div>
 
