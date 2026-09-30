@@ -118,11 +118,11 @@ const FieldTripAuditSchema = new mongoose.Schema({
   totalMiles: { type: Number, default: 0 },
   charge: { type: Number, default: 0 },
   accountCodeCheck: { type: String, enum: ['Pending', 'Verified', 'Flagged'], default: 'Pending' },
-  ratePerHour: { type: Number, default: 25.00 }, // Default billing rates
+  ratePerHour: { type: Number, default: 25.00 },
   ratePerMile: { type: Number, default: 2.50 }
 });
 
-// Middleware auto-calculating hours, miles, and charges before save
+// Pre-save middleware automatically computing hours, miles, and charges
 FieldTripAuditSchema.pre('save', function(next) {
   this.totalHours = Math.max(0, (this.endHours || 0) - (this.startHours || 0));
   this.totalMiles = Math.max(0, (this.endMiles || 0) - (this.startMiles || 0));
@@ -225,14 +225,12 @@ const COMMON_CSS = `
 
 // ================= FIELD TRIP AUDIT APIs =================
 
-// Sample CSV Download Endpoint for District Field Trips
 app.get('/api/samples/district-field-trips', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="district_field_trips_sample.csv"');
   res.send("Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Account Code Check\n2026-10-05,Athletic,Parkway Central,Varsity Football,Eureka High,15:30,21:00,2,John Doe,Equipment trailer attached,314-555-0199,100-2710-6341,15.0,21.5,12040,12095,Verified\n2026-10-05,Academic,Parkway West,Band,Powell Hall,08:30,14:00,1,Jane Smith,Instrument storage needed,314-555-0188,100-2710-6342,8.5,14.0,45100,45142,Pending\n");
 });
 
-// Upload Monthly Field Trips CSV
 app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) => {
   const results = [];
   fs.createReadStream(req.file.path)
@@ -287,7 +285,6 @@ app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) =
     });
 });
 
-// Get Field Trips by Date
 app.get('/api/district-field-trips/:date', async (req, res) => {
   try {
     const trips = await FieldTripAudit.find({ date: req.params.date });
@@ -297,7 +294,6 @@ app.get('/api/district-field-trips/:date', async (req, res) => {
   }
 });
 
-// Create Single Field Trip
 app.post('/api/district-field-trips', async (req, res) => {
   try {
     const trip = new FieldTripAudit(req.body);
@@ -308,21 +304,19 @@ app.post('/api/district-field-trips', async (req, res) => {
   }
 });
 
-// Update Field Trip (Recalculates totals)
 app.put('/api/district-field-trips/:id', async (req, res) => {
   try {
     const trip = await FieldTripAudit.findById(req.params.id);
     if (!trip) return res.status(404).json({ error: 'Record not found' });
 
     Object.assign(trip, req.body);
-    await trip.save(); // triggers pre-save middleware for calculations
+    await trip.save(); // pre-save middleware updates totalHours, totalMiles, charge
     res.json(trip);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// Delete Field Trip Record
 app.delete('/api/district-field-trips/:id', async (req, res) => {
   try {
     await FieldTripAudit.findByIdAndDelete(req.params.id);
@@ -332,10 +326,9 @@ app.delete('/api/district-field-trips/:id', async (req, res) => {
   }
 });
 
-// Export District Field Trips CSV for a Date or Month
 app.get('/api/district-field-trips/export/:date', async (req, res) => {
   try {
-    const { date } = req.params; // Accepts YYYY-MM-DD or YYYY-MM
+    const { date } = req.params;
     const trips = await FieldTripAudit.find({ date: { $regex: `^${date}` } });
 
     let csvContent = 'Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Total Hours,Total Miles,Charge,Account Code Check\n';
@@ -354,7 +347,6 @@ app.get('/api/district-field-trips/export/:date', async (req, res) => {
 
 // ================= ROUTE AND STATUS APIs =================
 
-// --- Drivers CRUD with Auto-Unassign ---
 app.get('/api/drivers', async (req, res) => res.json(await Driver.find()));
 app.post('/api/drivers', async (req, res) => {
   try {
@@ -416,7 +408,6 @@ app.delete('/api/drivers/:id', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// --- Buses CRUD with Auto-Unassign ---
 app.get('/api/buses', async (req, res) => res.json(await Bus.find()));
 app.post('/api/buses', async (req, res) => {
   try {
@@ -490,7 +481,6 @@ app.post('/api/buses/update-status', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// --- Mechanics CRUD ---
 app.get('/api/mechanics', async (req, res) => res.json(await Mechanic.find()));
 app.post('/api/mechanics', async (req, res) => {
   try {
@@ -575,7 +565,7 @@ app.post('/api/schedule/update-status', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// ================= FIELD TRIPS PORTAL PAGE =================
+// ================= FIELD TRIPS PORTAL PAGE (AUTO-SAVE GRID) =================
 app.get('/field-trips', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -591,7 +581,6 @@ app.get('/field-trips', (req, res) => {
     .grid-table th, .grid-table td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
     .grid-table th { background: #f0f0f0; font-weight: bold; position: sticky; top: 0; }
     input[type="text"], input[type="number"], select { width: 95%; font-family: 'Trebuchet MS'; font-size: 10px; padding: 2px 4px; border: 1px solid #ccc; }
-    .btn-save { background: #2e7d32; color: #fff; border: none; padding: 3px 6px; cursor: pointer; font-weight: bold; }
     .btn-del { background: #DD0000; color: #fff; border: none; padding: 3px 6px; cursor: pointer; font-weight: bold; }
     .kpi-row { display: flex; gap: 15px; margin: 10px 0; font-size: 12px; font-weight: bold; }
     .kpi-badge { background: #eee; padding: 4px 8px; border-radius: 3px; border-left: 3px solid #DD0000; }
@@ -653,7 +642,7 @@ app.get('/field-trips', (req, res) => {
               <th>Tot Mi</th>
               <th>Charge</th>
               <th>Check Status</th>
-              <th>Actions</th>
+              <th>Status / Action</th>
             </tr>
           </thead>
           <tbody id="tripTableBody"></tbody>
@@ -681,33 +670,34 @@ app.get('/field-trips', (req, res) => {
         totCharge += t.charge || 0;
 
         const row = document.createElement('tr');
+        row.id = 'row_' + t._id;
         row.innerHTML = \`
-          <td><input type="text" value="\${t.tripType || ''}" id="type_\${t._id}" /></td>
-          <td><input type="text" value="\${t.school || ''}" id="school_\${t._id}" /></td>
-          <td><input type="text" value="\${t.classTeam || ''}" id="team_\${t._id}" /></td>
-          <td><input type="text" value="\${t.destination || ''}" id="dest_\${t._id}" /></td>
-          <td><input type="text" value="\${t.pickupTime || ''}" id="pick_\${t._id}" style="width:50px;" /></td>
-          <td><input type="text" value="\${t.dropOffTime || ''}" id="drop_\${t._id}" style="width:50px;" /></td>
-          <td><input type="number" value="\${t.numBuses || 1}" id="buses_\${t._id}" style="width:35px;" /></td>
-          <td><input type="text" value="\${t.driverName || ''}" id="driver_\${t._id}" /></td>
-          <td><input type="text" value="\${t.accountCode || ''}" id="acct_\${t._id}" /></td>
-          <td><input type="number" step="0.1" value="\${t.startHours || 0}" id="sh_\${t._id}" style="width:40px;" onchange="recalc('\${t._id}')" /></td>
-          <td><input type="number" step="0.1" value="\${t.endHours || 0}" id="eh_\${t._id}" style="width:40px;" onchange="recalc('\${t._id}')" /></td>
+          <td><input type="text" value="\${t.tripType || ''}" onblur="autoSave('\${t._id}', 'tripType', this.value)" /></td>
+          <td><input type="text" value="\${t.school || ''}" onblur="autoSave('\${t._id}', 'school', this.value)" /></td>
+          <td><input type="text" value="\${t.classTeam || ''}" onblur="autoSave('\${t._id}', 'classTeam', this.value)" /></td>
+          <td><input type="text" value="\${t.destination || ''}" onblur="autoSave('\${t._id}', 'destination', this.value)" /></td>
+          <td><input type="text" value="\${t.pickupTime || ''}" onblur="autoSave('\${t._id}', 'pickupTime', this.value)" style="width:45px;" /></td>
+          <td><input type="text" value="\${t.dropOffTime || ''}" onblur="autoSave('\${t._id}', 'dropOffTime', this.value)" style="width:45px;" /></td>
+          <td><input type="number" value="\${t.numBuses || 1}" onblur="autoSave('\${t._id}', 'numBuses', this.value)" style="width:35px;" /></td>
+          <td><input type="text" value="\${t.driverName || ''}" onblur="autoSave('\${t._id}', 'driverName', this.value)" /></td>
+          <td><input type="text" value="\${t.accountCode || ''}" onblur="autoSave('\${t._id}', 'accountCode', this.value)" /></td>
+          <td><input type="number" step="0.1" value="\${t.startHours || 0}" onblur="autoSave('\${t._id}', 'startHours', this.value)" style="width:40px;" /></td>
+          <td><input type="number" step="0.1" value="\${t.endHours || 0}" onblur="autoSave('\${t._id}', 'endHours', this.value)" style="width:40px;" /></td>
           <td id="th_\${t._id}"><b>\${(t.totalHours || 0).toFixed(1)}</b></td>
-          <td><input type="number" value="\${t.startMiles || 0}" id="sm_\${t._id}" style="width:50px;" onchange="recalc('\${t._id}')" /></td>
-          <td><input type="number" value="\${t.endMiles || 0}" id="em_\${t._id}" style="width:50px;" onchange="recalc('\${t._id}')" /></td>
+          <td><input type="number" value="\${t.startMiles || 0}" onblur="autoSave('\${t._id}', 'startMiles', this.value)" style="width:50px;" /></td>
+          <td><input type="number" value="\${t.endMiles || 0}" onblur="autoSave('\${t._id}', 'endMiles', this.value)" style="width:50px;" /></td>
           <td id="tm_\${t._id}"><b>\${t.totalMiles || 0}</b></td>
           <td id="ch_\${t._id}"><b>$\${(t.charge || 0).toFixed(2)}</b></td>
           <td>
-            <select id="check_\${t._id}">
+            <select onchange="autoSave('\${t._id}', 'accountCodeCheck', this.value)">
               <option value="Pending" \${t.accountCodeCheck === 'Pending' ? 'selected' : ''}>Pending</option>
               <option value="Verified" \${t.accountCodeCheck === 'Verified' ? 'selected' : ''}>Verified</option>
               <option value="Flagged" \${t.accountCodeCheck === 'Flagged' ? 'selected' : ''}>Flagged</option>
             </select>
           </td>
           <td>
-            <button class="btn-save" onclick="saveTripRow('\${t._id}')">💾</button>
-            <button class="btn-del" onclick="deleteTripRow('\${t._id}')">🗑️</button>
+            <span id="status_\${t._id}" style="font-size:10px; color:#2e7d32; font-weight:bold;">Saved ✓</span>
+            <button class="btn-del" onclick="deleteTripRow('\${t._id}')" style="margin-left:4px;">🗑️</button>
           </td>
         \`;
         tbody.appendChild(row);
@@ -719,47 +709,63 @@ app.get('/field-trips', (req, res) => {
       document.getElementById('kpiCharge').innerText = totCharge.toFixed(2);
     }
 
-    function recalc(id) {
-      const sh = parseFloat(document.getElementById('sh_' + id).value) || 0;
-      const eh = parseFloat(document.getElementById('eh_' + id).value) || 0;
-      const sm = parseFloat(document.getElementById('sm_' + id).value) || 0;
-      const em = parseFloat(document.getElementById('em_' + id).value) || 0;
+    async function autoSave(id, fieldName, value) {
+      const statusEl = document.getElementById('status_' + id);
+      if (statusEl) {
+        statusEl.innerText = 'Saving...';
+        statusEl.style.color = '#FF9F3D';
+      }
 
-      const th = Math.max(0, eh - sh);
-      const tm = Math.max(0, em - sm);
-      const ch = (th * 25.00) + (tm * 2.50);
+      const payload = {};
+      payload[fieldName] = value;
 
-      document.getElementById('th_' + id).innerHTML = '<b>' + th.toFixed(1) + '</b>';
-      document.getElementById('tm_' + id).innerHTML = '<b>' + tm + '</b>';
-      document.getElementById('ch_' + id).innerHTML = '<b>$' + ch.toFixed(2) + '</b>';
-    }
-
-    async function saveTripRow(id) {
-      const payload = {
-        tripType: document.getElementById('type_' + id).value,
-        school: document.getElementById('school_' + id).value,
-        classTeam: document.getElementById('team_' + id).value,
-        destination: document.getElementById('dest_' + id).value,
-        pickupTime: document.getElementById('pick_' + id).value,
-        dropOffTime: document.getElementById('drop_' + id).value,
-        numBuses: parseInt(document.getElementById('buses_' + id).value || 1, 10),
-        driverName: document.getElementById('driver_' + id).value,
-        accountCode: document.getElementById('acct_' + id).value,
-        startHours: parseFloat(document.getElementById('sh_' + id).value || 0),
-        endHours: parseFloat(document.getElementById('eh_' + id).value || 0),
-        startMiles: parseFloat(document.getElementById('sm_' + id).value || 0),
-        endMiles: parseFloat(document.getElementById('em_' + id).value || 0),
-        accountCodeCheck: document.getElementById('check_' + id).value
-      };
-
-      await fetch('/api/district-field-trips/' + id, {
+      const res = await fetch('/api/district-field-trips/' + id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
-      alert('Field trip row updated!');
-      loadTrips();
+      if (res.ok) {
+        const updatedTrip = await res.json();
+        
+        document.getElementById('th_' + id).innerHTML = '<b>' + (updatedTrip.totalHours || 0).toFixed(1) + '</b>';
+        document.getElementById('tm_' + id).innerHTML = '<b>' + (updatedTrip.totalMiles || 0) + '</b>';
+        document.getElementById('ch_' + id).innerHTML = '<b>$' + (updatedTrip.charge || 0).toFixed(2) + '</b>';
+        
+        if (statusEl) {
+          statusEl.innerText = 'Saved ✓';
+          statusEl.style.color = '#2e7d32';
+        }
+        recalculateKPIs();
+      } else {
+        if (statusEl) {
+          statusEl.innerText = 'Error ⚠️';
+          statusEl.style.color = '#DD0000';
+        }
+      }
+    }
+
+    function recalculateKPIs() {
+      const rows = document.querySelectorAll('#tripTableBody tr');
+      let totHours = 0, totMiles = 0, totCharge = 0;
+
+      rows.forEach(r => {
+        const id = r.id.replace('row_', '');
+        const thEl = document.getElementById('th_' + id);
+        const tmEl = document.getElementById('tm_' + id);
+        const chEl = document.getElementById('ch_' + id);
+
+        if (thEl && tmEl && chEl) {
+          totHours += parseFloat(thEl.innerText) || 0;
+          totMiles += parseInt(tmEl.innerText, 10) || 0;
+          totCharge += parseFloat(chEl.innerText.replace('$', '')) || 0;
+        }
+      });
+
+      document.getElementById('kpiCount').innerText = rows.length;
+      document.getElementById('kpiHours').innerText = totHours.toFixed(1);
+      document.getElementById('kpiMiles').innerText = totMiles;
+      document.getElementById('kpiCharge').innerText = totCharge.toFixed(2);
     }
 
     async function addEmptyTripRow() {
@@ -948,7 +954,7 @@ app.get('/dashboard', (req, res) => {
               <span class="badge badge-slot">\${r.categoryTag}</span>
             </div>
             <div style="color:#444;">👤 \${driverName} | 🚌 \${busNum}</div>
-            <div style="color:#DD0000; font-weight:bold;">⏱️️ \${r.checkInTime || 'N/A'}</div>
+            <div style="color:#DD0000; font-weight:bold;">⏱ \${r.checkInTime || 'N/A'}</div>
           \`;
           colEnRoute.appendChild(card);
         } else {
@@ -1344,7 +1350,7 @@ app.get('/admin', (req, res) => {
         <li style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;">
           <span><b>\${d.name}</b> (\${d.staffId}) - \${d.phoneNumber}</span>
           <div>
-            <button class="btn-action btn-edit" onclick="openEdit('driver', '\${d._id}')">✏️ Edit</button>
+            <button class="btn-action btn-edit" onclick="openEdit('driver', '\${d._id}')">✏️️ Edit</button>
             <button class="btn-action btn-delete" onclick="deleteItem('driver', '\${d._id}')">🗑️ Delete</button>
           </div>
         </li>
