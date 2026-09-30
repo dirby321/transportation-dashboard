@@ -96,6 +96,42 @@ const DailySchedule = mongoose.model('DailySchedule', new mongoose.Schema({
   fieldTrips: [RouteEntrySchema]
 }));
 
+// --- District Field Trip Audit Schema ---
+const FieldTripAuditSchema = new mongoose.Schema({
+  date: { type: String, required: true }, // YYYY-MM-DD
+  tripType: { type: String, default: 'Athletic' },
+  school: String,
+  classTeam: String,
+  destination: String,
+  pickupTime: String,
+  dropOffTime: String,
+  numBuses: { type: Number, default: 1 },
+  driverName: String,
+  notes: String,
+  coachCommLine: String,
+  accountCode: String,
+  startHours: { type: Number, default: 0 },
+  endHours: { type: Number, default: 0 },
+  startMiles: { type: Number, default: 0 },
+  endMiles: { type: Number, default: 0 },
+  totalHours: { type: Number, default: 0 },
+  totalMiles: { type: Number, default: 0 },
+  charge: { type: Number, default: 0 },
+  accountCodeCheck: { type: String, enum: ['Pending', 'Verified', 'Flagged'], default: 'Pending' },
+  ratePerHour: { type: Number, default: 25.00 }, // Default billing rates
+  ratePerMile: { type: Number, default: 2.50 }
+});
+
+// Middleware auto-calculating hours, miles, and charges before save
+FieldTripAuditSchema.pre('save', function(next) {
+  this.totalHours = Math.max(0, (this.endHours || 0) - (this.startHours || 0));
+  this.totalMiles = Math.max(0, (this.endMiles || 0) - (this.startMiles || 0));
+  this.charge = (this.totalHours * (this.ratePerHour || 25)) + (this.totalMiles * (this.ratePerMile || 2.5));
+  next();
+});
+
+const FieldTripAudit = mongoose.model('FieldTripAudit', FieldTripAuditSchema);
+
 // ================= AUTOMATED DELAYED ROUTE MONITOR =================
 function startDelayedRouteScanner() {
   console.log('Starting background delayed route scanner (Central Time)...');
@@ -171,6 +207,7 @@ function renderHeader(activePage, showFullscreen = false) {
       <a href="/admin" class="nav-btn ${activePage === 'admin' ? 'nav-active' : ''}">📋 Admin Portal</a>
       <a href="/mechanics" class="nav-btn ${activePage === 'mechanics' ? 'nav-active' : ''}">🛠️ Shop Portal</a>
       <a href="/reports" class="nav-btn ${activePage === 'reports' ? 'nav-active' : ''}">📊 EOD Reports</a>
+      <a href="/field-trips" class="nav-btn ${activePage === 'field-trips' ? 'nav-active' : ''}">🚌 District Trips</a>
     </div>
   </header>
   `;
@@ -186,157 +223,133 @@ const COMMON_CSS = `
   .nav-active { background: #DD0000; border: 1.5px solid #ffffff; }
 `;
 
-// ================= SAMPLE CSV DOWNLOAD ENDPOINTS =================
+// ================= FIELD TRIP AUDIT APIs =================
 
-app.get('/api/samples/drivers', (req, res) => {
+// Sample CSV Download Endpoint for District Field Trips
+app.get('/api/samples/district-field-trips', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="drivers_sample.csv"');
-  res.send("name,staffId,phoneNumber\nJohn Doe,DRV101,314-555-0101\nJane Smith,DRV102,314-555-0102\n");
+  res.setHeader('Content-Disposition', 'attachment; filename="district_field_trips_sample.csv"');
+  res.send("Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Account Code Check\n2026-10-05,Athletic,Parkway Central,Varsity Football,Eureka High,15:30,21:00,2,John Doe,Equipment trailer attached,314-555-0199,100-2710-6341,15.0,21.5,12040,12095,Verified\n2026-10-05,Academic,Parkway West,Band,Powell Hall,08:30,14:00,1,Jane Smith,Instrument storage needed,314-555-0188,100-2710-6342,8.5,14.0,45100,45142,Pending\n");
 });
 
-app.get('/api/samples/buses', (req, res) => {
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="buses_sample.csv"');
-  res.send("busNumber,isSpare\n101,false\n102,true\n103,false\n");
-});
-
-app.get('/api/samples/mechanics', (req, res) => {
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="mechanics_sample.csv"');
-  res.send("name,phoneNumber\nMike Taylor,314-555-0199\nSarah Connor,314-555-0188\n");
-});
-
-app.get('/api/samples/schedule', (req, res) => {
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="schedule_sample.csv"');
-  res.send("date,slot,routeName,scheduledTime,staffId,busNumber\n2026-09-28,amRoutes,Route 12,07:00,DRV101,101\n2026-09-28,amRoutes,Route 14,07:15,DRV102,103\n2026-09-28,pmRoutes,Route 12,14:30,DRV101,101\n2026-09-28,fieldTrips,Zoo Trip,09:00,DRV102,102\n");
-});
-
-// ================= CSV UPLOAD API ENDPOINTS =================
-
-app.post('/api/upload/drivers', upload.single('file'), (req, res) => {
+// Upload Monthly Field Trips CSV
+app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) => {
   const results = [];
   fs.createReadStream(req.file.path)
     .pipe(csv())
     .on('data', (data) => results.push(data))
     .on('end', async () => {
       try {
+        let importedCount = 0;
         for (let row of results) {
-          if (row.name && row.staffId && row.phoneNumber) {
-            await Driver.findOneAndUpdate(
-              { staffId: row.staffId.trim() },
-              { name: row.name.trim(), staffId: row.staffId.trim(), phoneNumber: row.phoneNumber.trim() },
-              { upsert: true }
-            );
+          const tripDate = row['Date'] || row['date'];
+          if (tripDate) {
+            const startHours = parseFloat(row['Start Hours'] || 0);
+            const endHours = parseFloat(row['End Hours'] || 0);
+            const startMiles = parseFloat(row['Start Miles'] || 0);
+            const endMiles = parseFloat(row['End Miles'] || 0);
+            const totalHours = Math.max(0, endHours - startHours);
+            const totalMiles = Math.max(0, endMiles - startMiles);
+            const charge = (totalHours * 25.00) + (totalMiles * 2.50);
+
+            const tripData = {
+              date: tripDate.trim(),
+              tripType: row['Trip Type'] || 'Athletic',
+              school: row['School'] || '',
+              classTeam: row['Class / Team'] || '',
+              destination: row['Destination'] || '',
+              pickupTime: row['Pickup Time'] || '',
+              dropOffTime: row['Drop Off Time'] || '',
+              numBuses: parseInt(row['# of Buses'] || 1, 10),
+              driverName: row['Driver Name'] || '',
+              notes: row['Notes'] || '',
+              coachCommLine: row['Coach Communications Line'] || '',
+              accountCode: row['Account Code'] || '',
+              startHours,
+              endHours,
+              startMiles,
+              endMiles,
+              totalHours,
+              totalMiles,
+              charge,
+              accountCodeCheck: row['Account Code Check'] || 'Pending'
+            };
+
+            await FieldTripAudit.create(tripData);
+            importedCount++;
           }
         }
         fs.unlinkSync(req.file.path);
-        res.json({ message: `Successfully imported/updated ${results.length} drivers!` });
+        res.json({ message: `Successfully imported ${importedCount} field trip records!` });
       } catch (err) {
         res.status(400).json({ error: err.message });
       }
     });
 });
 
-app.post('/api/upload/buses', upload.single('file'), (req, res) => {
-  const results = [];
-  fs.createReadStream(req.file.path)
-    .pipe(csv())
-    .on('data', (data) => results.push(data))
-    .on('end', async () => {
-      try {
-        for (let row of results) {
-          if (row.busNumber) {
-            const isSpare = String(row.isSpare).toLowerCase() === 'true';
-            await Bus.findOneAndUpdate(
-              { busNumber: row.busNumber.trim() },
-              { busNumber: row.busNumber.trim(), isSpare },
-              { upsert: true }
-            );
-          }
-        }
-        fs.unlinkSync(req.file.path);
-        res.json({ message: `Successfully imported/updated ${results.length} buses!` });
-      } catch (err) {
-        res.status(400).json({ error: err.message });
-      }
-    });
+// Get Field Trips by Date
+app.get('/api/district-field-trips/:date', async (req, res) => {
+  try {
+    const trips = await FieldTripAudit.find({ date: req.params.date });
+    res.json(trips);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-app.post('/api/upload/mechanics', upload.single('file'), (req, res) => {
-  const results = [];
-  fs.createReadStream(req.file.path)
-    .pipe(csv())
-    .on('data', (data) => results.push(data))
-    .on('end', async () => {
-      try {
-        for (let row of results) {
-          if (row.name && row.phoneNumber) {
-            await Mechanic.findOneAndUpdate(
-              { name: row.name.trim() },
-              { name: row.name.trim(), phoneNumber: row.phoneNumber.trim() },
-              { upsert: true }
-            );
-          }
-        }
-        fs.unlinkSync(req.file.path);
-        res.json({ message: `Successfully imported/updated ${results.length} mechanics!` });
-      } catch (err) {
-        res.status(400).json({ error: err.message });
-      }
-    });
+// Create Single Field Trip
+app.post('/api/district-field-trips', async (req, res) => {
+  try {
+    const trip = new FieldTripAudit(req.body);
+    await trip.save();
+    res.status(201).json(trip);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-app.post('/api/upload/schedule', upload.single('file'), (req, res) => {
-  const rows = [];
-  fs.createReadStream(req.file.path)
-    .pipe(csv())
-    .on('data', (data) => rows.push(data))
-    .on('end', async () => {
-      try {
-        const drivers = await Driver.find();
-        const buses = await Bus.find();
+// Update Field Trip (Recalculates totals)
+app.put('/api/district-field-trips/:id', async (req, res) => {
+  try {
+    const trip = await FieldTripAudit.findById(req.params.id);
+    if (!trip) return res.status(404).json({ error: 'Record not found' });
 
-        const driverMap = new Map(drivers.map(d => [d.staffId, d._id]));
-        const busMap = new Map(buses.map(b => [b.busNumber, b._id]));
+    Object.assign(trip, req.body);
+    await trip.save(); // triggers pre-save middleware for calculations
+    res.json(trip);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
-        const schedulesByDate = {};
+// Delete Field Trip Record
+app.delete('/api/district-field-trips/:id', async (req, res) => {
+  try {
+    await FieldTripAudit.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
-        for (let row of rows) {
-          const { date, slot, routeName, scheduledTime, staffId, busNumber } = row;
-          if (!date || !slot || !routeName) continue;
+// Export District Field Trips CSV for a Date or Month
+app.get('/api/district-field-trips/export/:date', async (req, res) => {
+  try {
+    const { date } = req.params; // Accepts YYYY-MM-DD or YYYY-MM
+    const trips = await FieldTripAudit.find({ date: { $regex: `^${date}` } });
 
-          if (!schedulesByDate[date]) {
-            schedulesByDate[date] = { amRoutes: [], pmRoutes: [], fieldTrips: [] };
-          }
+    let csvContent = 'Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Total Hours,Total Miles,Charge,Account Code Check\n';
 
-          const driverId = driverMap.get(staffId?.trim()) || null;
-          const busId = busMap.get(busNumber?.trim()) || null;
-
-          if (schedulesByDate[date][slot]) {
-            schedulesByDate[date][slot].push({ 
-              routeName: routeName.trim(), 
-              scheduledTime: scheduledTime ? scheduledTime.trim() : '07:00',
-              driverId, 
-              busId 
-            });
-          }
-        }
-
-        for (let date in schedulesByDate) {
-          await DailySchedule.findOneAndUpdate(
-            { date },
-            schedulesByDate[date],
-            { upsert: true, new: true }
-          );
-        }
-
-        fs.unlinkSync(req.file.path);
-        res.json({ message: `Successfully imported schedules for ${Object.keys(schedulesByDate).length} date(s)!` });
-      } catch (err) {
-        res.status(400).json({ error: err.message });
-      }
+    trips.forEach(t => {
+      csvContent += `"${t.date}","${t.tripType}","${t.school}","${t.classTeam}","${t.destination}","${t.pickupTime}","${t.dropOffTime}","${t.numBuses}","${t.driverName}","${t.notes}","${t.coachCommLine}","${t.accountCode}","${t.startHours}","${t.endHours}","${t.startMiles}","${t.endMiles}","${t.totalHours}","${t.totalMiles}","$${t.charge.toFixed(2)}","${t.accountCodeCheck}"\n`;
     });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="district_field_trips_${date}.csv"`);
+    res.send(csvContent);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
 });
 
 // ================= ROUTE AND STATUS APIs =================
@@ -562,115 +575,241 @@ app.post('/api/schedule/update-status', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-app.post('/api/schedule/copy-forward', async (req, res) => {
-  const { targetDate } = req.body;
-  try {
-    const targetObj = new Date(targetDate);
-    targetObj.setDate(targetObj.getDate() - 1);
-    const prevDate = targetObj.toISOString().split('T')[0];
+// ================= FIELD TRIPS PORTAL PAGE =================
+app.get('/field-trips', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Parkway Schools - District Field Trip Audit</title>
+  <style>
+    ${COMMON_CSS}
+    .container { padding: 15px 25px; }
+    .card { background: #fff; padding: 15px; border-radius: 4px; border-top: 4px solid #DD0000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    .upload-box { background: #fafafa; border: 1px dashed #666; padding: 10px; font-size: 11px; margin-bottom: 15px; }
+    .grid-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+    .grid-table th, .grid-table td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
+    .grid-table th { background: #f0f0f0; font-weight: bold; position: sticky; top: 0; }
+    input[type="text"], input[type="number"], select { width: 95%; font-family: 'Trebuchet MS'; font-size: 10px; padding: 2px 4px; border: 1px solid #ccc; }
+    .btn-save { background: #2e7d32; color: #fff; border: none; padding: 3px 6px; cursor: pointer; font-weight: bold; }
+    .btn-del { background: #DD0000; color: #fff; border: none; padding: 3px 6px; cursor: pointer; font-weight: bold; }
+    .kpi-row { display: flex; gap: 15px; margin: 10px 0; font-size: 12px; font-weight: bold; }
+    .kpi-badge { background: #eee; padding: 4px 8px; border-radius: 3px; border-left: 3px solid #DD0000; }
+    @media print { header, .upload-box, .toolbar, button, .no-print { display: none !important; } }
+  </style>
+</head>
+<body>
+  ${renderHeader('field-trips', false)}
 
-    const prevSchedule = await DailySchedule.findOne({ date: prevDate });
-    if (!prevSchedule) {
-      return res.status(404).json({ error: `No schedule found for previous day (${prevDate}) to copy.` });
+  <div class="container">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0; color:#DD0000; font-size:16px;">🚌 DISTRICT FIELD TRIP TRACKER & AUDIT GRID</h2>
+        <div>
+          <button onclick="window.print()" class="nav-btn" style="background:#666;">🖨 Print Audit</button>
+          <button onclick="exportTripsCSV()" class="nav-btn">⬇️ Export CSV</button>
+        </div>
+      </div>
+
+      <div class="upload-box no-print">
+        <b>📁 Import Monthly Field Trips Spreadsheet (CSV):</b><br/>
+        <a href="/api/samples/district-field-trips" style="color:#DD0000; font-weight:bold;">⬇️ Download Sample Template CSV</a>
+        <input type="file" id="tripCsv" accept=".csv" style="margin-top:6px;" />
+        <button type="button" onclick="uploadTripsCSV()">Upload Monthly CSV</button>
+      </div>
+
+      <div style="display:flex; gap:15px; align-items:center; margin-bottom:10px;">
+        <label style="font-weight:bold; font-size:12px;">Select Date: 
+          <input type="date" id="tripDate" onchange="loadTrips()" style="padding:2px; font-family:'Trebuchet MS';" />
+        </label>
+        <button onclick="addEmptyTripRow()" class="nav-btn" style="background:#2e7d32;">+ Add New Field Trip</button>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-badge">Total Trips: <span id="kpiCount">0</span></div>
+        <div class="kpi-badge">Total Hours: <span id="kpiHours">0</span> hrs</div>
+        <div class="kpi-badge">Total Miles: <span id="kpiMiles">0</span> mi</div>
+        <div class="kpi-badge">Total Charge: $<span id="kpiCharge">0.00</span></div>
+      </div>
+
+      <div style="overflow-x: auto; max-height: 60vh;">
+        <table class="grid-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>School</th>
+              <th>Class/Team</th>
+              <th>Destination</th>
+              <th>Pickup</th>
+              <th>Dropoff</th>
+              <th>Buses</th>
+              <th>Driver Name</th>
+              <th>Account Code</th>
+              <th>Start Hr</th>
+              <th>End Hr</th>
+              <th>Tot Hr</th>
+              <th>Start Mi</th>
+              <th>End Mi</th>
+              <th>Tot Mi</th>
+              <th>Charge</th>
+              <th>Check Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tripTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('tripDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+
+    async function loadTrips() {
+      const date = document.getElementById('tripDate').value;
+      const res = await fetch('/api/district-field-trips/' + date);
+      const trips = await res.json();
+
+      const tbody = document.getElementById('tripTableBody');
+      tbody.innerHTML = '';
+
+      let totHours = 0, totMiles = 0, totCharge = 0;
+
+      trips.forEach(t => {
+        totHours += t.totalHours || 0;
+        totMiles += t.totalMiles || 0;
+        totCharge += t.charge || 0;
+
+        const row = document.createElement('tr');
+        row.innerHTML = \`
+          <td><input type="text" value="\${t.tripType || ''}" id="type_\${t._id}" /></td>
+          <td><input type="text" value="\${t.school || ''}" id="school_\${t._id}" /></td>
+          <td><input type="text" value="\${t.classTeam || ''}" id="team_\${t._id}" /></td>
+          <td><input type="text" value="\${t.destination || ''}" id="dest_\${t._id}" /></td>
+          <td><input type="text" value="\${t.pickupTime || ''}" id="pick_\${t._id}" style="width:50px;" /></td>
+          <td><input type="text" value="\${t.dropOffTime || ''}" id="drop_\${t._id}" style="width:50px;" /></td>
+          <td><input type="number" value="\${t.numBuses || 1}" id="buses_\${t._id}" style="width:35px;" /></td>
+          <td><input type="text" value="\${t.driverName || ''}" id="driver_\${t._id}" /></td>
+          <td><input type="text" value="\${t.accountCode || ''}" id="acct_\${t._id}" /></td>
+          <td><input type="number" step="0.1" value="\${t.startHours || 0}" id="sh_\${t._id}" style="width:40px;" onchange="recalc('\${t._id}')" /></td>
+          <td><input type="number" step="0.1" value="\${t.endHours || 0}" id="eh_\${t._id}" style="width:40px;" onchange="recalc('\${t._id}')" /></td>
+          <td id="th_\${t._id}"><b>\${(t.totalHours || 0).toFixed(1)}</b></td>
+          <td><input type="number" value="\${t.startMiles || 0}" id="sm_\${t._id}" style="width:50px;" onchange="recalc('\${t._id}')" /></td>
+          <td><input type="number" value="\${t.endMiles || 0}" id="em_\${t._id}" style="width:50px;" onchange="recalc('\${t._id}')" /></td>
+          <td id="tm_\${t._id}"><b>\${t.totalMiles || 0}</b></td>
+          <td id="ch_\${t._id}"><b>$\${(t.charge || 0).toFixed(2)}</b></td>
+          <td>
+            <select id="check_\${t._id}">
+              <option value="Pending" \${t.accountCodeCheck === 'Pending' ? 'selected' : ''}>Pending</option>
+              <option value="Verified" \${t.accountCodeCheck === 'Verified' ? 'selected' : ''}>Verified</option>
+              <option value="Flagged" \${t.accountCodeCheck === 'Flagged' ? 'selected' : ''}>Flagged</option>
+            </select>
+          </td>
+          <td>
+            <button class="btn-save" onclick="saveTripRow('\${t._id}')">💾</button>
+            <button class="btn-del" onclick="deleteTripRow('\${t._id}')">🗑️</button>
+          </td>
+        \`;
+        tbody.appendChild(row);
+      });
+
+      document.getElementById('kpiCount').innerText = trips.length;
+      document.getElementById('kpiHours').innerText = totHours.toFixed(1);
+      document.getElementById('kpiMiles').innerText = totMiles;
+      document.getElementById('kpiCharge').innerText = totCharge.toFixed(2);
     }
 
-    const resetRoutes = (routes) => routes.map(r => ({
-      routeName: r.routeName,
-      scheduledTime: r.scheduledTime,
-      driverId: r.driverId,
-      busId: r.busId,
-      notes: r.notes,
-      status: 'Pending',
-      checkInTime: null,
-      returnTime: null
-    }));
+    function recalc(id) {
+      const sh = parseFloat(document.getElementById('sh_' + id).value) || 0;
+      const eh = parseFloat(document.getElementById('eh_' + id).value) || 0;
+      const sm = parseFloat(document.getElementById('sm_' + id).value) || 0;
+      const em = parseFloat(document.getElementById('em_' + id).value) || 0;
 
-    const newSchedule = await DailySchedule.findOneAndUpdate(
-      { date: targetDate },
-      {
-        amRoutes: resetRoutes(prevSchedule.amRoutes),
-        pmRoutes: resetRoutes(prevSchedule.pmRoutes),
-        fieldTrips: resetRoutes(prevSchedule.fieldTrips)
-      },
-      { upsert: true, new: true }
-    );
-    res.json(newSchedule);
-  } catch (err) { res.status(400).json({ error: err.message }); }
-});
+      const th = Math.max(0, eh - sh);
+      const tm = Math.max(0, em - sm);
+      const ch = (th * 25.00) + (tm * 2.50);
 
-// ================= END OF DAY REPORT APIs =================
-
-app.get('/api/reports/daily/:date', async (req, res) => {
-  try {
-    const { date } = req.params;
-    const schedule = await DailySchedule.findOne({ date })
-      .populate('amRoutes.driverId amRoutes.busId')
-      .populate('pmRoutes.driverId pmRoutes.busId')
-      .populate('fieldTrips.driverId fieldTrips.busId');
-
-    if (!schedule) {
-      return res.status(404).json({ error: `No dispatch data recorded for ${date}.` });
+      document.getElementById('th_' + id).innerHTML = '<b>' + th.toFixed(1) + '</b>';
+      document.getElementById('tm_' + id).innerHTML = '<b>' + tm + '</b>';
+      document.getElementById('ch_' + id).innerHTML = '<b>$' + ch.toFixed(2) + '</b>';
     }
 
-    const allRoutes = [
-      ...(schedule.amRoutes || []).map(r => ({ ...r.toObject(), categoryTag: 'AM' })),
-      ...(schedule.pmRoutes || []).map(r => ({ ...r.toObject(), categoryTag: 'PM' })),
-      ...(schedule.fieldTrips || []).map(r => ({ ...r.toObject(), categoryTag: 'Field Trip' }))
-    ];
+    async function saveTripRow(id) {
+      const payload = {
+        tripType: document.getElementById('type_' + id).value,
+        school: document.getElementById('school_' + id).value,
+        classTeam: document.getElementById('team_' + id).value,
+        destination: document.getElementById('dest_' + id).value,
+        pickupTime: document.getElementById('pick_' + id).value,
+        dropOffTime: document.getElementById('drop_' + id).value,
+        numBuses: parseInt(document.getElementById('buses_' + id).value || 1, 10),
+        driverName: document.getElementById('driver_' + id).value,
+        accountCode: document.getElementById('acct_' + id).value,
+        startHours: parseFloat(document.getElementById('sh_' + id).value || 0),
+        endHours: parseFloat(document.getElementById('eh_' + id).value || 0),
+        startMiles: parseFloat(document.getElementById('sm_' + id).value || 0),
+        endMiles: parseFloat(document.getElementById('em_' + id).value || 0),
+        accountCodeCheck: document.getElementById('check_' + id).value
+      };
 
-    const totalRoutes = allRoutes.length;
-    const completedRoutes = allRoutes.filter(r => r.status && r.status.startsWith('Returned')).length;
-    const delayedRoutes = allRoutes.filter(r => r.status === 'Delayed').length;
-    const unassignedRoutes = allRoutes.filter(r => !r.driverId || !r.busId).length;
-    const onTimeRate = totalRoutes > 0 ? Math.round(((completedRoutes - delayedRoutes) / totalRoutes) * 100) : 0;
+      await fetch('/api/district-field-trips/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-    res.json({
-      date,
-      summary: {
-        totalRoutes,
-        completedRoutes,
-        delayedRoutes,
-        unassignedRoutes,
-        onTimeRate: Math.max(0, onTimeRate)
-      },
-      routes: allRoutes
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get('/api/reports/daily/:date/export', async (req, res) => {
-  try {
-    const { date } = req.params;
-    const schedule = await DailySchedule.findOne({ date })
-      .populate('amRoutes.driverId amRoutes.busId')
-      .populate('pmRoutes.driverId pmRoutes.busId')
-      .populate('fieldTrips.driverId fieldTrips.busId');
-
-    if (!schedule) {
-      return res.status(404).send('No data found for this date.');
+      alert('Field trip row updated!');
+      loadTrips();
     }
 
-    const formatRow = (r, slot) => {
-      const driver = r.driverId ? r.driverId.name : 'Unassigned';
-      const staffId = r.driverId ? r.driverId.staffId : 'N/A';
-      const bus = r.busId ? r.busId.busNumber : 'Unassigned';
-      return `"${date}","${slot}","${r.routeName}","${r.scheduledTime || ''}","${driver}","${staffId}","${bus}","${r.status}","${r.checkInTime || ''}","${r.returnTime || ''}"\n`;
-    };
+    async function addEmptyTripRow() {
+      const date = document.getElementById('tripDate').value;
+      await fetch('/api/district-field-trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, school: 'Parkway Central', tripType: 'Athletic' })
+      });
+      loadTrips();
+    }
 
-    let csvContent = 'Date,Slot,Route Name,Scheduled Time,Driver Name,Staff ID,Bus Number,Final Status,Check-In Time,Return Time\n';
+    async function deleteTripRow(id) {
+      if (!confirm('Are you sure you want to delete this trip record?')) return;
+      await fetch('/api/district-field-trips/' + id, { method: 'DELETE' });
+      loadTrips();
+    }
 
-    (schedule.amRoutes || []).forEach(r => { csvContent += formatRow(r, 'AM'); });
-    (schedule.pmRoutes || []).forEach(r => { csvContent += formatRow(r, 'PM'); });
-    (schedule.fieldTrips || []).forEach(r => { csvContent += formatRow(r, 'Field Trip'); });
+    async function uploadTripsCSV() {
+      const fileInput = document.getElementById('tripCsv');
+      if (!fileInput.files[0]) {
+        alert('Please choose a CSV file first!');
+        return;
+      }
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="parkway_dispatch_report_${date}.csv"`);
-    res.send(csvContent);
-  } catch (err) {
-    res.status(500).send(err.message);
-  }
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      const res = await fetch('/api/upload/district-field-trips', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (res.ok) {
+        alert(data.message);
+        fileInput.value = '';
+        loadTrips();
+      } else {
+        alert('Error: ' + data.error);
+      }
+    }
+
+    function exportTripsCSV() {
+      const date = document.getElementById('tripDate').value;
+      window.location.href = '/api/district-field-trips/export/' + date;
+    }
+
+    loadTrips();
+  </script>
+</body>
+</html>
+  `);
 });
 
 // ================= VIEW-ONLY DISPATCH MONITOR DASHBOARD =================
@@ -755,20 +894,6 @@ app.get('/dashboard', (req, res) => {
       }
     }
 
-    function formatTo12Hour(time24) {
-      if (!time24) return 'N/A';
-      if (time24.includes('AM') || time24.includes('PM')) return time24;
-      const parts = time24.split(':');
-      if (parts.length < 2) return time24;
-      const hours = parseInt(parts[0], 10);
-      const minutes = parseInt(parts[1], 10);
-      if (isNaN(hours) || isNaN(minutes)) return time24;
-      const period = hours >= 12 ? 'PM' : 'AM';
-      const hours12 = hours % 12 || 12;
-      const minStr = minutes < 10 ? '0' + minutes : minutes;
-      return hours12 + ':' + minStr + ' ' + period;
-    }
-
     async function loadDashData() {
       const date = document.getElementById('dashDate').value;
       const slot = document.getElementById('slotFilter').value;
@@ -823,7 +948,7 @@ app.get('/dashboard', (req, res) => {
               <span class="badge badge-slot">\${r.categoryTag}</span>
             </div>
             <div style="color:#444;">👤 \${driverName} | 🚌 \${busNum}</div>
-            <div style="color:#DD0000; font-weight:bold;">⏱️ \${r.checkInTime || 'N/A'}</div>
+            <div style="color:#DD0000; font-weight:bold;">⏱️️ \${r.checkInTime || 'N/A'}</div>
           \`;
           colEnRoute.appendChild(card);
         } else {
@@ -941,20 +1066,6 @@ app.get('/dispatch', (req, res) => {
       } else {
         if (document.exitFullscreen) document.exitFullscreen();
       }
-    }
-
-    function formatTo12Hour(time24) {
-      if (!time24) return 'N/A';
-      if (time24.includes('AM') || time24.includes('PM')) return time24;
-      const parts = time24.split(':');
-      if (parts.length < 2) return time24;
-      const hours = parseInt(parts[0], 10);
-      const minutes = parseInt(parts[1], 10);
-      if (isNaN(hours) || isNaN(minutes)) return time24;
-      const period = hours >= 12 ? 'PM' : 'AM';
-      const hours12 = hours % 12 || 12;
-      const minStr = minutes < 10 ? '0' + minutes : minutes;
-      return hours12 + ':' + minStr + ' ' + period;
     }
 
     function filterByDriver() {
@@ -1589,7 +1700,7 @@ app.get('/mechanics', (req, res) => {
   ${renderHeader('mechanics', false)}
 
   <div class="container">
-    <h2>🛠️️ Fleet Maintenance & Shop Portal</h2>
+    <h2>🛠️ Fleet Maintenance & Shop Portal</h2>
     <div id="busGrid" class="grid"></div>
   </div>
 
