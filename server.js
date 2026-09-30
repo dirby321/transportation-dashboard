@@ -122,7 +122,6 @@ const FieldTripAuditSchema = new mongoose.Schema({
   ratePerMile: { type: Number, default: 2.50 }
 });
 
-// Pre-save middleware automatically computing hours, miles, and charges
 FieldTripAuditSchema.pre('save', function(next) {
   this.totalHours = Math.max(0, (this.endHours || 0) - (this.startHours || 0));
   this.totalMiles = Math.max(0, (this.endMiles || 0) - (this.startMiles || 0));
@@ -223,12 +222,163 @@ const COMMON_CSS = `
   .nav-active { background: #DD0000; border: 1.5px solid #ffffff; }
 `;
 
-// ================= FIELD TRIP AUDIT APIs =================
+// ================= SAMPLE CSV DOWNLOAD ENDPOINTS =================
+
+app.get('/api/samples/drivers', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="drivers_sample.csv"');
+  res.send("name,staffId,phoneNumber\nJohn Doe,DRV101,314-555-0101\nJane Smith,DRV102,314-555-0102\n");
+});
+
+app.get('/api/samples/buses', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="buses_sample.csv"');
+  res.send("busNumber,isSpare\n101,false\n102,true\n103,false\n");
+});
+
+app.get('/api/samples/mechanics', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="mechanics_sample.csv"');
+  res.send("name,phoneNumber\nMike Taylor,314-555-0199\nSarah Connor,314-555-0188\n");
+});
+
+app.get('/api/samples/schedule', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="schedule_sample.csv"');
+  res.send("date,slot,routeName,scheduledTime,staffId,busNumber\n2026-09-28,amRoutes,Route 12,07:00,DRV101,101\n2026-09-28,amRoutes,Route 14,07:15,DRV102,103\n2026-09-28,pmRoutes,Route 12,14:30,DRV101,101\n2026-09-28,fieldTrips,Zoo Trip,09:00,DRV102,102\n");
+});
 
 app.get('/api/samples/district-field-trips', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="district_field_trips_sample.csv"');
   res.send("Date,Trip Type,School,Class / Team,Destination,Pickup Time,Drop Off Time,# of Buses,Driver Name,Notes,Coach Communications Line,Account Code,Start Hours,End Hours,Start Miles,End Miles,Account Code Check\n2026-10-05,Athletic,Parkway Central,Varsity Football,Eureka High,3:30 PM,9:00 PM,2,John Doe,Equipment trailer attached,314-555-0199,100-2710-6341,15.0,21.5,12040,12095,Verified\n2026-10-05,Academic,Parkway West,Band,Powell Hall,8:30 AM,2:00 PM,1,Jane Smith,Instrument storage needed,314-555-0188,100-2710-6342,8.5,14.0,45100,45142,Pending\n");
+});
+
+// ================= CSV BATCH UPLOAD APIs =================
+
+app.post('/api/upload/drivers', upload.single('file'), (req, res) => {
+  const results = [];
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => results.push(data))
+    .on('end', async () => {
+      try {
+        for (let row of results) {
+          if (row.name && row.staffId && row.phoneNumber) {
+            await Driver.findOneAndUpdate(
+              { staffId: row.staffId.trim() },
+              { name: row.name.trim(), staffId: row.staffId.trim(), phoneNumber: row.phoneNumber.trim() },
+              { upsert: true }
+            );
+          }
+        }
+        fs.unlinkSync(req.file.path);
+        res.json({ message: `Successfully imported/updated ${results.length} drivers!` });
+      } catch (err) {
+        res.status(400).json({ error: err.message });
+      }
+    });
+});
+
+app.post('/api/upload/buses', upload.single('file'), (req, res) => {
+  const results = [];
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => results.push(data))
+    .on('end', async () => {
+      try {
+        for (let row of results) {
+          if (row.busNumber) {
+            const isSpare = String(row.isSpare).toLowerCase() === 'true';
+            await Bus.findOneAndUpdate(
+              { busNumber: row.busNumber.trim() },
+              { busNumber: row.busNumber.trim(), isSpare },
+              { upsert: true }
+            );
+          }
+        }
+        fs.unlinkSync(req.file.path);
+        res.json({ message: `Successfully imported/updated ${results.length} buses!` });
+      } catch (err) {
+        res.status(400).json({ error: err.message });
+      }
+    });
+});
+
+app.post('/api/upload/mechanics', upload.single('file'), (req, res) => {
+  const results = [];
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => results.push(data))
+    .on('end', async () => {
+      try {
+        for (let row of results) {
+          if (row.name && row.phoneNumber) {
+            await Mechanic.findOneAndUpdate(
+              { name: row.name.trim() },
+              { name: row.name.trim(), phoneNumber: row.phoneNumber.trim() },
+              { upsert: true }
+            );
+          }
+        }
+        fs.unlinkSync(req.file.path);
+        res.json({ message: `Successfully imported/updated ${results.length} mechanics!` });
+      } catch (err) {
+        res.status(400).json({ error: err.message });
+      }
+    });
+});
+
+app.post('/api/upload/schedule', upload.single('file'), (req, res) => {
+  const rows = [];
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => rows.push(data))
+    .on('end', async () => {
+      try {
+        const drivers = await Driver.find();
+        const buses = await Bus.find();
+
+        const driverMap = new Map(drivers.map(d => [d.staffId, d._id]));
+        const busMap = new Map(buses.map(b => [b.busNumber, b._id]));
+
+        const schedulesByDate = {};
+
+        for (let row of rows) {
+          const { date, slot, routeName, scheduledTime, staffId, busNumber } = row;
+          if (!date || !slot || !routeName) continue;
+
+          if (!schedulesByDate[date]) {
+            schedulesByDate[date] = { amRoutes: [], pmRoutes: [], fieldTrips: [] };
+          }
+
+          const driverId = driverMap.get(staffId?.trim()) || null;
+          const busId = busMap.get(busNumber?.trim()) || null;
+
+          if (schedulesByDate[date][slot]) {
+            schedulesByDate[date][slot].push({ 
+              routeName: routeName.trim(), 
+              scheduledTime: scheduledTime ? scheduledTime.trim() : '07:00',
+              driverId, 
+              busId 
+            });
+          }
+        }
+
+        for (let date in schedulesByDate) {
+          await DailySchedule.findOneAndUpdate(
+            { date },
+            schedulesByDate[date],
+            { upsert: true, new: true }
+          );
+        }
+
+        fs.unlinkSync(req.file.path);
+        res.json({ message: `Successfully imported schedules for ${Object.keys(schedulesByDate).length} date(s)!` });
+      } catch (err) {
+        res.status(400).json({ error: err.message });
+      }
+    });
 });
 
 app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) => {
@@ -284,6 +434,8 @@ app.post('/api/upload/district-field-trips', upload.single('file'), (req, res) =
       }
     });
 });
+
+// ================= FIELD TRIP AUDIT APIs =================
 
 app.get('/api/district-field-trips/:date', async (req, res) => {
   try {
@@ -575,7 +727,118 @@ app.post('/api/schedule/update-status', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// ================= FIELD TRIPS PORTAL PAGE (12-HOUR AM/PM FORMAT) =================
+app.post('/api/schedule/copy-forward', async (req, res) => {
+  const { targetDate } = req.body;
+  try {
+    const targetObj = new Date(targetDate);
+    targetObj.setDate(targetObj.getDate() - 1);
+    const prevDate = targetObj.toISOString().split('T')[0];
+
+    const prevSchedule = await DailySchedule.findOne({ date: prevDate });
+    if (!prevSchedule) {
+      return res.status(404).json({ error: `No schedule found for previous day (${prevDate}) to copy.` });
+    }
+
+    const resetRoutes = (routes) => routes.map(r => ({
+      routeName: r.routeName,
+      scheduledTime: r.scheduledTime,
+      driverId: r.driverId,
+      busId: r.busId,
+      notes: r.notes,
+      status: 'Pending',
+      checkInTime: null,
+      returnTime: null
+    }));
+
+    const newSchedule = await DailySchedule.findOneAndUpdate(
+      { date: targetDate },
+      {
+        amRoutes: resetRoutes(prevSchedule.amRoutes),
+        pmRoutes: resetRoutes(prevSchedule.pmRoutes),
+        fieldTrips: resetRoutes(prevSchedule.fieldTrips)
+      },
+      { upsert: true, new: true }
+    );
+    res.json(newSchedule);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// ================= END OF DAY REPORT APIs =================
+
+app.get('/api/reports/daily/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const schedule = await DailySchedule.findOne({ date })
+      .populate('amRoutes.driverId amRoutes.busId')
+      .populate('pmRoutes.driverId pmRoutes.busId')
+      .populate('fieldTrips.driverId fieldTrips.busId');
+
+    if (!schedule) {
+      return res.status(404).json({ error: `No dispatch data recorded for ${date}.` });
+    }
+
+    const allRoutes = [
+      ...(schedule.amRoutes || []).map(r => ({ ...r.toObject(), categoryTag: 'AM' })),
+      ...(schedule.pmRoutes || []).map(r => ({ ...r.toObject(), categoryTag: 'PM' })),
+      ...(schedule.fieldTrips || []).map(r => ({ ...r.toObject(), categoryTag: 'Field Trip' }))
+    ];
+
+    const totalRoutes = allRoutes.length;
+    const completedRoutes = allRoutes.filter(r => r.status && r.status.startsWith('Returned')).length;
+    const delayedRoutes = allRoutes.filter(r => r.status === 'Delayed').length;
+    const unassignedRoutes = allRoutes.filter(r => !r.driverId || !r.busId).length;
+    const onTimeRate = totalRoutes > 0 ? Math.round(((completedRoutes - delayedRoutes) / totalRoutes) * 100) : 0;
+
+    res.json({
+      date,
+      summary: {
+        totalRoutes,
+        completedRoutes,
+        delayedRoutes,
+        unassignedRoutes,
+        onTimeRate: Math.max(0, onTimeRate)
+      },
+      routes: allRoutes
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/reports/daily/:date/export', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const schedule = await DailySchedule.findOne({ date })
+      .populate('amRoutes.driverId amRoutes.busId')
+      .populate('pmRoutes.driverId pmRoutes.busId')
+      .populate('fieldTrips.driverId fieldTrips.busId');
+
+    if (!schedule) {
+      return res.status(404).send('No data found for this date.');
+    }
+
+    const formatRow = (r, slot) => {
+      const driver = r.driverId ? r.driverId.name : 'Unassigned';
+      const staffId = r.driverId ? r.driverId.staffId : 'N/A';
+      const bus = r.busId ? r.busId.busNumber : 'Unassigned';
+      return `"${date}","${slot}","${r.routeName}","${r.scheduledTime || ''}","${driver}","${staffId}","${bus}","${r.status}","${r.checkInTime || ''}","${r.returnTime || ''}"\n`;
+    };
+
+    let csvContent = 'Date,Slot,Route Name,Scheduled Time,Driver Name,Staff ID,Bus Number,Final Status,Check-In Time,Return Time\n';
+
+    (schedule.amRoutes || []).forEach(r => { csvContent += formatRow(r, 'AM'); });
+    (schedule.pmRoutes || []).forEach(r => { csvContent += formatRow(r, 'PM'); });
+    (schedule.fieldTrips || []).forEach(r => { csvContent += formatRow(r, 'Field Trip'); });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="parkway_dispatch_report_${date}.csv"`);
+    res.send(csvContent);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// ================= FIELD TRIPS PORTAL PAGE =================
 app.get('/field-trips', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -606,7 +869,7 @@ app.get('/field-trips', (req, res) => {
         <h2 style="margin:0; color:#DD0000; font-size:16px;">🚌 DISTRICT FIELD TRIP TRACKER & AUDIT GRID</h2>
         <div>
           <button onclick="window.print()" class="nav-btn" style="background:#666;">🖨 Print Audit</button>
-          <button onclick="exportTripsCSV()" class="nav-btn">⬇️ Export CSV</button>
+          <button onclick="exportTripsCSV()" class="nav-btn">⬇️️ Export CSV</button>
         </div>
       </div>
 
@@ -986,6 +1249,20 @@ app.get('/dashboard', (req, res) => {
       }
     }
 
+    function formatTo12Hour(time24) {
+      if (!time24) return 'N/A';
+      if (time24.includes('AM') || time24.includes('PM')) return time24;
+      const parts = time24.split(':');
+      if (parts.length < 2) return time24;
+      const hours = parseInt(parts[0], 10);
+      const minutes = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes)) return time24;
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hours12 = hours % 12 || 12;
+      const minStr = minutes < 10 ? '0' + minutes : minutes;
+      return hours12 + ':' + minStr + ' ' + period;
+    }
+
     async function loadDashData() {
       const date = document.getElementById('dashDate').value;
       const slot = document.getElementById('slotFilter').value;
@@ -1322,7 +1599,7 @@ app.get('/admin', (req, res) => {
 
         <div class="upload-box">
           <b>📁 Batch Upload Drivers (CSV):</b><br/>
-          <a href="/api/samples/drivers" style="color:#DD0000; font-weight:bold;">⬇️️ Download Sample CSV</a>
+          <a href="/api/samples/drivers" style="color:#DD0000; font-weight:bold;">⬇️ Download Sample CSV</a>
           <input type="file" id="driverCsv" accept=".csv" style="margin-top:6px;" />
           <button type="button" onclick="uploadCsv('/api/upload/drivers', 'driverCsv')">Upload Drivers CSV</button>
         </div>
@@ -1340,7 +1617,7 @@ app.get('/admin', (req, res) => {
 
         <div class="upload-box">
           <b>📁 Batch Upload Buses (CSV):</b><br/>
-          <a href="/api/samples/buses" style="color:#DD0000; font-weight:bold;">⬇️ Download Sample CSV</a>
+          <a href="/api/samples/buses" style="color:#DD0000; font-weight:bold;">⬇️️ Download Sample CSV</a>
           <input type="file" id="busCsv" accept=".csv" style="margin-top:6px;" />
           <button type="button" onclick="uploadCsv('/api/upload/buses', 'busCsv')">Upload Buses CSV</button>
         </div>
@@ -1457,7 +1734,7 @@ app.get('/admin', (req, res) => {
           <span><b>\${m.name}</b> - \${m.phoneNumber}</span>
           <div>
             <button class="btn-action btn-edit" onclick="openEdit('mechanic', '\${m._id}')">✏️ Edit</button>
-            <button class="btn-action btn-delete" onclick="deleteItem('mechanic', '\${m._id}')">🗑️️ Delete</button>
+            <button class="btn-action btn-delete" onclick="deleteItem('mechanic', '\${m._id}')">🗑️ Delete</button>
           </div>
         </li>
       \`).join('');
@@ -1894,7 +2171,7 @@ app.get('/reports', (req, res) => {
         <h2 style="margin:0; color:#DD0000; font-size:18px;">📊 END OF DAY DISPATCH REPORT</h2>
         <div>
           <button onclick="window.print()" class="nav-btn" style="background:#666;">🖨 Print Report</button>
-          <button onclick="downloadCSV()" class="nav-btn">⬇ Export CSV</button>
+          <button onclick="downloadCSV()" class="nav-btn">⬇️ Export CSV</button>
         </div>
       </div>
 
