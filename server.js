@@ -1036,7 +1036,7 @@ app.post('/api/sync/drivers', requireAdminAccess(), async (req, res) => {
         const ouPath = (u.orgUnitPath || '').toLowerCase();
         const email = u.primaryEmail ? u.primaryEmail.toLowerCase().trim() : '';
 
-        const isDriver = jobTitle.includes('driver') || jobTitle.includes('operator') || ouPath.includes('driver');
+        const isDriver = jobTitle.includes('driver') || jobTitle.includes('operator') && ouPath.includes('tra');
 
         if (isDriver && email) {
           await Driver.findOneAndUpdate(
