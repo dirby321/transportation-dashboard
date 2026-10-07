@@ -286,4 +286,161 @@ function renderDriverList() {
   if (!el) return;
   el.innerHTML = '';
   (window.driversList || []).forEach(d => {
-    const
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;';
+    
+    const infoSpan = document.createElement('span');
+    infoSpan.innerHTML = '<b>' + (d.name || '') + '</b> (' + (d.email || '') + ')';
+    
+    const btnDiv = document.createElement('div');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-action btn-delete';
+    delBtn.innerText = '🗑 Delete';
+    delBtn.onclick = function() { deleteItem('driver', d._id); };
+    
+    btnDiv.appendChild(delBtn);
+    li.appendChild(infoSpan);
+    li.appendChild(btnDiv);
+    el.appendChild(li);
+  });
+}
+
+function renderBusList() {
+  const el = document.getElementById('busList');
+  if (!el) return;
+  el.innerHTML = '';
+  (window.busesList || []).forEach(b => {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;';
+    
+    const infoSpan = document.createElement('span');
+    infoSpan.innerHTML = '<b>Bus #' + (b.busNumber || '') + '</b> ' + (b.isSpare ? '(Spare)' : '') + ' ' + (b.status === 'In Shop' ? '<b style="color:#DD0000;">[IN SHOP]</b>' : '');
+    
+    const btnDiv = document.createElement('div');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-action btn-delete';
+    delBtn.innerText = '🗑 Delete';
+    delBtn.onclick = function() { deleteItem('bus', b._id); };
+    
+    btnDiv.appendChild(delBtn);
+    li.appendChild(infoSpan);
+    li.appendChild(btnDiv);
+    el.appendChild(li);
+  });
+}
+
+function renderMechList() {
+  const el = document.getElementById('mechList');
+  if (!el) return;
+  el.innerHTML = '';
+  (window.mechanicsList || []).forEach(m => {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;';
+    
+    const infoSpan = document.createElement('span');
+    infoSpan.innerHTML = '<b>' + (m.name || '') + '</b> (' + (m.email || '') + ')';
+    
+    const btnDiv = document.createElement('div');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-action btn-delete';
+    delBtn.innerText = '🗑 Delete';
+    delBtn.onclick = function() { deleteItem('mechanic', m._id); };
+    
+    btnDiv.appendChild(delBtn);
+    li.appendChild(infoSpan);
+    li.appendChild(btnDiv);
+    el.appendChild(li);
+  });
+}
+
+async function deleteItem(type, id) {
+  if (!confirm('Are you sure you want to delete this ' + type + '?')) return;
+  const endpoint = type === 'driver' ? '/api/drivers/' : type === 'bus' ? '/api/buses/' : '/api/mechanics/';
+  let res = await fetch(endpoint + id, { method: 'DELETE' });
+  let data = await res.json();
+
+  if (!res.ok && data.hasConflict) {
+    const forceDelete = confirm(data.error + '\n\nDo you want to FORCE DELETE anyway?');
+    if (forceDelete) {
+      res = await fetch(endpoint + id + '?force=true', { method: 'DELETE' });
+      data = await res.json();
+      if (res.ok) { alert(type.toUpperCase() + ' force deleted.'); window.fetchData(); }
+      else { alert('Error: ' + data.error); }
+    }
+  } else if (res.ok) { window.fetchData(); }
+  else { alert('Error: ' + data.error); }
+}
+
+async function removeAdmin(id) {
+  if (!confirm('Are you sure you want to remove this admin record?')) return;
+  await fetch('/api/admin-whitelist/' + id, { method: 'DELETE' });
+  window.fetchAdminWhitelist();
+}
+
+// ================= DOM INITIALIZATION =================
+
+document.addEventListener('DOMContentLoaded', function() {
+  const schedDateEl = document.getElementById('scheduleDate');
+  if (schedDateEl) {
+    schedDateEl.value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  }
+
+  const adminForm = document.getElementById('adminWhitelistForm');
+  if (adminForm) {
+    adminForm.onsubmit = async function(e) {
+      e.preventDefault();
+      const emailInput = document.getElementById('aEmail');
+      const res = await fetch('/api/admin-whitelist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailInput.value })
+      });
+      if (res.ok) { emailInput.value = ''; window.fetchAdminWhitelist(); }
+      else { const data = await res.json(); alert('Error: ' + (data.error || 'Failed to add admin')); }
+    };
+  }
+
+  const dForm = document.getElementById('driverForm');
+  if (dForm) {
+    dForm.onsubmit = async function(e) {
+      e.preventDefault();
+      const res = await fetch('/api/drivers', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: document.getElementById('dName').value, email: document.getElementById('dEmail').value })
+      });
+      if (res.ok) { e.target.reset(); window.fetchData(); }
+      else { const data = await res.json(); alert('Error: ' + data.error); }
+    };
+  }
+
+  const bForm = document.getElementById('busForm');
+  if (bForm) {
+    bForm.onsubmit = async function(e) {
+      e.preventDefault();
+      await fetch('/api/buses', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ busNumber: document.getElementById('bNumber').value, isSpare: document.getElementById('bSpare').checked })
+      });
+      e.target.reset();
+      window.fetchData();
+    };
+  }
+
+  const mForm = document.getElementById('mechForm');
+  if (mForm) {
+    mForm.onsubmit = async function(e) {
+      e.preventDefault();
+      const res = await fetch('/api/mechanics', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: document.getElementById('mName').value, email: document.getElementById('mEmail').value })
+      });
+      if (res.ok) { e.target.reset(); window.fetchData(); }
+      else { const data = await res.json(); alert('Error: ' + data.error); }
+    };
+  }
+
+  window.fetchData();
+});
