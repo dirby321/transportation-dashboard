@@ -241,16 +241,19 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/myappdb';
 
 const connectWithRetry = () => {
   console.log('Connecting to MongoDB...');
-  mongoose.connect(MONGO_URI)
+  // Correct server startup and poller hook structure
+  mongoose.connect(process.env.MONGO_URI)
     .then(() => {
-      console.log('MongoDB connected successfully.');
+      console.log('[MONGO] Connected successfully to Atlas');
+      
+      // Start background poller if defined
       if (typeof startGoogleSheetPoller === 'function') {
         startGoogleSheetPoller();
-        console.log('[POLLER] Google Sheets background sync started.');
+        console.log('[POLLER] Google Sheet poller started.');
+      }
     })
-    .catch((err) => {
-      console.error('MongoDB connection error:', err.message);
-      setTimeout(connectWithRetry, 5000);
+    .catch(err => {
+      console.error('[MONGO ERROR]:', err.message);
     });
 };
 
