@@ -1068,6 +1068,16 @@ app.post('/api/sync/drivers', requireAdminAccess(), async (req, res) => {
   }
 });
 
+app.delete('/api/drivers/clear-all', requireAdminAccess(), async (req, res) => {
+  try {
+    const result = await Driver.deleteMany({});
+    res.json({ message: `Successfully deleted ${result.deletedCount} driver(s).`, count: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 app.post('/api/sync/mechanics', requireAdminAccess(), async (req, res) => {
   try {
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -2817,6 +2827,7 @@ app.get('/admin', requireAdminAccess(), async (req, res) => {
           <button type="submit">Add Driver</button>
         </form>
         <button type="button" onclick="syncDirectory('drivers')" class="btn-secondary" style="margin-top:6px;">🔄 Sync Drivers from Google Directory</button>
+        <button type="button" onclick="clearAllDrivers()" class="btn-delete" style="flex:1;">🗑 Clear All Drivers</button>
 
         <div class="upload-box">
           <b>📁 Batch Upload Drivers (CSV):</b><br/>
