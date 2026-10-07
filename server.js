@@ -1020,6 +1020,7 @@ app.post('/api/sync/drivers', requireAdminAccess(), async (req, res) => {
 
     let pageToken = null;
     let syncedCount = 0;
+    let totalExamined = 0;
 
     do {
       const response = await service.users.list({
@@ -1030,15 +1031,24 @@ app.post('/api/sync/drivers', requireAdminAccess(), async (req, res) => {
       });
 
       const users = response.data.users || [];
+      totalExamined += users.length;
 
       for (let u of users) {
         const jobTitle = (u.organizations && u.organizations[0] ? (u.organizations[0].title || '') : '').toLowerCase();
-        const ouPath = (u.orgUnitPath || '').toLowerCase();
+        const ouPath = (u.orgUnitPath || '').toUpperCase();
         const email = u.primaryEmail ? u.primaryEmail.toLowerCase().trim() : '';
+        
+        // 1. Check if user account is suspended or disabled in Google Workspace
+        const isActive = !u.suspended && u.archived !== true;
 
-        const isDriver = jobTitle.includes('driver') || jobTitle.includes('operator') && ouPath.includes('tra');
+        // 2. Exact word boundary check for "driver" in job title (case-insensitive)
+        const hasDriverTitle = /\bdriver\b/i.test(jobTitle);
 
-        if (isDriver && email) {
+        // 3. Strict OU check: Must be in /TRA or a sub-OU of /TRA (e.g., /parkwayschools.net/TRA or /TRA)
+        const isInTraOU = ouPath.includes('/TRA') || ouPath.endsWith('/TRA');
+
+        // All three criteria must be TRUE
+        if (isActive && hasDriverTitle && isInTraOU && email) {
           await Driver.findOneAndUpdate(
             { email },
             { name: u.name ? u.name.fullName : email, email },
@@ -1051,8 +1061,9 @@ app.post('/api/sync/drivers', requireAdminAccess(), async (req, res) => {
       pageToken = response.data.nextPageToken;
     } while (pageToken);
 
-    res.json({ message: `Successfully synced ${syncedCount} driver(s)!` });
+    res.json({ message: `Examined ${totalExamined} Workspace accounts. Successfully synced ${syncedCount} active TRA driver(s)!` });
   } catch (err) {
+    console.error('[SYNC DRIVERS ERROR]:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
