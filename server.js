@@ -1096,7 +1096,7 @@ app.post('/api/sync/mechanics', requireAdminAccess(), async (req, res) => {
         const ouPath = (u.orgUnitPath || '').toLowerCase();
         const email = u.primaryEmail ? u.primaryEmail.toLowerCase().trim() : '';
 
-        const isMechanic = jobTitle.includes('mechanic') || ouPath.includes('mechanic');
+        const isMechanic = jobTitle.includes('mechanic') && ouPath.includes('tra');
 
         if (isMechanic && email) {
           await Mechanic.findOneAndUpdate(
