@@ -243,9 +243,10 @@ const connectWithRetry = () => {
   console.log('Connecting to MongoDB...');
   mongoose.connect(MONGO_URI)
     .then(() => {
-      console.log('Successfully connected to MongoDB!');
-      startDelayedRouteScanner();
-      startGoogleSheetPoller();
+      console.log('MongoDB connected successfully.');
+      if (typeof startGoogleSheetPoller === 'function') {
+        startGoogleSheetPoller();
+        console.log('[POLLER] Google Sheets background sync started.');
     })
     .catch((err) => {
       console.error('MongoDB connection error:', err.message);
