@@ -28,19 +28,25 @@ function updateOptions(containerId) {
     const currentDriver = String(driverSelect.value || driverSelect.dataset.assignedVal || '');
     const currentBus = String(busSelect.value || busSelect.dataset.assignedVal || '');
 
-    driverSelect.innerHTML = '<option value="">Select Driver</option>' + 
-      (window.driversList || []).map(d => {
-        const dIdStr = String(d._id);
-        const isTaken = selectedDrivers.has(dIdStr) && dIdStr !== currentDriver;
-        return isTaken ? '' : '<option value="' + dIdStr + '">' + d.name + '</option>';
-      }).join('');
+    let driverOpts = '<option value="">Select Driver</option>';
+    (window.driversList || []).forEach(d => {
+      const dIdStr = String(d._id);
+      const isTaken = selectedDrivers.has(dIdStr) && dIdStr !== currentDriver;
+      if (!isTaken) {
+        driverOpts += '<option value="' + dIdStr + '">' + d.name + '</option>';
+      }
+    });
+    driverSelect.innerHTML = driverOpts;
 
-    busSelect.innerHTML = '<option value="">Select Bus</option>' + 
-      availableBuses.map(b => {
-        const bIdStr = String(b._id);
-        const isTaken = selectedBuses.has(bIdStr) && bIdStr !== currentBus;
-        return isTaken ? '' : '<option value="' + bIdStr + '">Bus ' + b.busNumber + (b.isSpare ? ' (Spare)' : '') + '</option>';
-      }).join('');
+    let busOpts = '<option value="">Select Bus</option>';
+    availableBuses.forEach(b => {
+      const bIdStr = String(b._id);
+      const isTaken = selectedBuses.has(bIdStr) && bIdStr !== currentBus;
+      if (!isTaken) {
+        busOpts += '<option value="' + bIdStr + '">Bus ' + b.busNumber + (b.isSpare ? ' (Spare)' : '') + '</option>';
+      }
+    });
+    busSelect.innerHTML = busOpts;
 
     if (currentDriver) driverSelect.value = currentDriver;
     if (currentBus) busSelect.value = currentBus;
@@ -156,9 +162,9 @@ window.addRouteRow = function(containerId, data) {
   dSel.dataset.assignedVal = driverObjId;
   bSel.dataset.assignedVal = busObjId;
 
-  dSel.onchange = () => { dSel.dataset.assignedVal = dSel.value; updateOptions(containerId); };
-  bSel.onchange = () => { bSel.dataset.assignedVal = bSel.value; updateOptions(containerId); };
-  div.querySelector('.btn-remove-row').onclick = () => { div.remove(); updateOptions(containerId); };
+  dSel.onchange = function() { dSel.dataset.assignedVal = dSel.value; updateOptions(containerId); };
+  bSel.onchange = function() { bSel.dataset.assignedVal = bSel.value; updateOptions(containerId); };
+  div.querySelector('.btn-remove-row').onclick = function() { div.remove(); updateOptions(containerId); };
 
   container.appendChild(div);
   updateOptions(containerId);
@@ -259,4 +265,25 @@ window.fetchAdminWhitelist = async function() {
     (Array.isArray(admins) ? admins : []).forEach(a => {
       const li = document.createElement('li');
       li.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:6px 0; font-size:12px;';
-      li.innerHTML = '<span><b>' + (a.email || '') + '</b> <span style="color:#
+      
+      const infoSpan = document.createElement('span');
+      infoSpan.innerHTML = '<b>' + (a.email || '') + '</b> <span style="color:#888; font-size:10px;">(Added by ' + (a.addedBy || 'System') + ')</span>';
+      
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-action btn-delete';
+      delBtn.innerText = '🗑 Remove';
+      delBtn.onclick = function() { removeAdmin(a._id); };
+
+      li.appendChild(infoSpan);
+      li.appendChild(delBtn);
+      el.appendChild(li);
+    });
+  } catch (e) { console.error('Error loading admin whitelist:', e); }
+};
+
+function renderDriverList() {
+  const el = document.getElementById('driverList');
+  if (!el) return;
+  el.innerHTML = '';
+  (window.driversList || []).forEach(d => {
+    const
