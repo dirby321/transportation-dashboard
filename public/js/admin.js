@@ -56,7 +56,8 @@ function updateOptions(containerId) {
 function extractRoutes(containerId) {
   const container = document.getElementById(containerId);
   if (!container) return { routes: [], hasError: false };
-  const rows = container.children;
+  
+  const rows = Array.from(container.children);
   const routes = [];
   let hasError = false;
 
@@ -68,12 +69,12 @@ function extractRoutes(containerId) {
 
     const routeName = nameEl ? nameEl.value.trim() : '';
 
-    // If row exists but Route No. is blank
+    // If a row exists, Route No. MUST be provided
     if (!routeName) {
       if (nameEl) nameEl.style.border = '2px solid red';
       hasError = true;
     } else {
-      if (nameEl) nameEl.style.border = ''; // Reset border if valid
+      if (nameEl) nameEl.style.border = '';
       routes.push({
         routeName: routeName,
         scheduledTime: timeEl ? timeEl.value : '07:00',
@@ -203,13 +204,15 @@ window.loadSchedule = async function() {
 
 window.saveSchedule = async function() {
   const dateEl = document.getElementById('scheduleDate');
-  if (!dateEl) return;
+  if (!dateEl || !dateEl.value) {
+    alert('Please select a date first.');
+    return;
+  }
 
   const am = extractRoutes('amContainer');
   const pm = extractRoutes('pmContainer');
   const trip = extractRoutes('tripContainer');
 
-  // Stop save if any route field was left empty
   if (am.hasError || pm.hasError || trip.hasError) {
     alert('⚠️ Please enter a Route No. for all added rows before saving.');
     return;
@@ -222,17 +225,25 @@ window.saveSchedule = async function() {
     fieldTrips: trip.routes
   };
 
-  const res = await fetch('/api/schedule', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const res = await fetch('/api/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-  if (res.ok) {
-    alert('Schedule saved successfully!');
-  } else {
-    const err = await res.json();
-    alert('Error: ' + (err.error || 'Failed to save schedule'));
+    const data = await res.json();
+
+    if (res.ok) {
+      alert('Schedule saved successfully!');
+      if (typeof window.loadSchedule === 'function') {
+        window.loadSchedule();
+      }
+    } else {
+      alert('Error: ' + (data.error || 'Failed to save schedule'));
+    }
+  } catch (err) {
+    alert('Error connecting to server: ' + err.message);
   }
 };
 

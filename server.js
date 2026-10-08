@@ -1646,41 +1646,67 @@ app.delete('/api/mechanics/:id', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// GET /api/schedule/:date - Load schedule for a specific date
 app.get('/api/schedule/:date', async (req, res) => {
-  const normalizedDate = normalizeDateStr(req.params.date);
+  try {
+    const schedule = await DailySchedule.findOne({ date: req.params.date })
+      .populate('amRoutes.driverId amRoutes.busId')
+      .populate('pmRoutes.driverId pmRoutes.busId')
+      .populate('fieldTrips.driverId fieldTrips.busId');
 
-  let schedule = await DailySchedule.findOne({ date: normalizedDate })
-    .populate('amRoutes.driverId amRoutes.busId')
-    .populate('pmRoutes.driverId pmRoutes.busId')
-    .populate('fieldTrips.driverId fieldTrips.busId');
-  
-  if (!schedule) {
-    schedule = { date: normalizedDate, amRoutes: [], pmRoutes: [], fieldTrips: [] };
+    res.json(schedule || { date: req.params.date, amRoutes: [], pmRoutes: [], fieldTrips: [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  res.json(schedule);
 });
 
+// POST /api/schedule - Save or update a daily schedule
 app.post('/api/schedule', requireAdminAccess(), async (req, res) => {
+  console.log('[SCHEDULE POST HIT] Payload:', JSON.stringify(req.body));
+
   try {
     const { date, amRoutes, pmRoutes, fieldTrips } = req.body;
 
-    // Helper to filter out routes without a valid name
-    const clean = (arr) => (Array.isArray(arr) ? arr : []).filter(r => r && r.routeName && r.routeName.trim() !== '');
+    if (!date) {
+      return res.status(400).json({ error: 'Date is required.' });
+    }
 
-    const schedule = await Schedule.findOneAndUpdate(
+    // Helper to sanitize routes and format ObjectIds
+    const sanitizeRoutes = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .filter(r => r && r.routeName && String(r.routeName).trim() !== '')
+        .map(r => ({
+          routeName: String(r.routeName).trim(),
+          scheduledTime: r.scheduledTime || '07:00',
+          driverId: (r.driverId && String(r.driverId).trim() !== '') ? r.driverId : null,
+          busId: (r.busId && String(r.busId).trim() !== '') ? r.busId : null
+        }));
+    };
+
+    const cleanAm = sanitizeRoutes(amRoutes);
+    const cleanPm = sanitizeRoutes(pmRoutes);
+    const cleanTrips = sanitizeRoutes(fieldTrips);
+
+    const schedule = await DailySchedule.findOneAndUpdate(
       { date },
       {
         date,
-        amRoutes: clean(amRoutes),
-        pmRoutes: clean(pmRoutes),
-        fieldTrips: clean(fieldTrips)
+        amRoutes: cleanAm,
+        pmRoutes: cleanPm,
+        fieldTrips: cleanTrips
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true, runValidators: false }
     );
 
+    console.log('[SCHEDULE POST SUCCESS] Saved schedule for date:', date);
     res.json({ message: 'Schedule saved successfully!', schedule });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('====================================');
+    console.error('[SAVE SCHEDULE CRASH DETECTED]:', err);
+    console.error('====================================');
+    res.status(500).json({ error: err.message || 'Server error while saving schedule' });
   }
 });
 
