@@ -106,24 +106,42 @@ async function updateStatus(routeId, status) {
   let startMiles = null;
   let endMiles = null;
 
-  // Prompts ONLY happen during Return status update
-  if (status && status.startsWith('Returned')) {
-    const startInput = prompt('Enter STARTING Mileage for this trip:');
+  const date = document.getElementById('kioskDate').value;
+  const category = document.getElementById('slotFilter').value;
+
+  // 1. Fetch schedule to check if this routeId belongs to fieldTrips
+  let isFieldTrip = category === 'fieldTrips';
+
+  if (category === 'all') {
+    try {
+      const scheduleRes = await fetch('/api/schedule/' + date);
+      if (scheduleRes.ok) {
+        const scheduleData = await scheduleRes.json();
+        const trips = Array.isArray(scheduleData.fieldTrips) ? scheduleData.fieldTrips : [];
+        isFieldTrip = trips.some(t => String(t._id) === String(routeId));
+      }
+    } catch (e) {
+      console.error('Error verifying route category:', e);
+    }
+  }
+
+  // 2. Only prompt for odometer mileage if it is a Field Trip AND returning
+  if (isFieldTrip && status && status.startsWith('Returned')) {
+    const startInput = prompt('Enter STARTING Mileage for this field trip:');
     if (startInput === null) return; // Driver clicked Cancel
     if (startInput.trim() !== '') startMiles = parseFloat(startInput.trim());
 
-    const endInput = prompt('Enter ENDING Mileage for this trip:');
+    const endInput = prompt('Enter ENDING Mileage for this field trip:');
     if (endInput === null) return; // Driver clicked Cancel
     if (endInput.trim() !== '') endMiles = parseFloat(endInput.trim());
   }
 
-  const date = document.getElementById('kioskDate').value;
-  const category = document.getElementById('slotFilter').value;
-  
+  // 3. Send update request to server
   await fetch('/api/schedule/update-status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ date, category, routeId, status, startMiles, endMiles })
   });
+
   loadKioskData();
 }
