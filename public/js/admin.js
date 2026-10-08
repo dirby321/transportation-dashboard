@@ -55,25 +55,34 @@ function updateOptions(containerId) {
 
 function extractRoutes(containerId) {
   const container = document.getElementById(containerId);
-  if (!container) return [];
+  if (!container) return { routes: [], hasError: false };
   const rows = container.children;
   const routes = [];
+  let hasError = false;
+
   for (let row of rows) {
     const nameEl = row.querySelector('.r-name');
     const timeEl = row.querySelector('.r-time');
     const driverEl = row.querySelector('.r-driver');
     const busEl = row.querySelector('.r-bus');
 
-    if (nameEl && nameEl.value) {
+    const routeName = nameEl ? nameEl.value.trim() : '';
+
+    // If row exists but Route No. is blank
+    if (!routeName) {
+      if (nameEl) nameEl.style.border = '2px solid red';
+      hasError = true;
+    } else {
+      if (nameEl) nameEl.style.border = ''; // Reset border if valid
       routes.push({
-        routeName: nameEl.value,
+        routeName: routeName,
         scheduledTime: timeEl ? timeEl.value : '07:00',
         driverId: (driverEl && driverEl.value) ? driverEl.value : null,
         busId: (busEl && busEl.value) ? busEl.value : null
       });
     }
   }
-  return routes;
+  return { routes, hasError };
 }
 
 // ================= GLOBAL WINDOW HANDLERS =================
@@ -150,7 +159,7 @@ window.addRouteRow = function(containerId, data) {
   const busInShop = data.busId && data.busId.status === 'In Shop';
   const shopBadge = busInShop ? '<span style="color:#DD0000; font-weight:bold; font-size:10px;" title="Bus is in shop">🛠 IN SHOP</span>' : '';
 
-  div.innerHTML = '<input type="text" placeholder="Route No." value="' + (data.routeName || '') + '" style="width: 20%;" class="r-name" />' +
+  div.innerHTML = '<input type="text" placeholder="Route No." value="' + (data.routeName || '') + '" style="width: 20%;" class="r-name" required />' +
     '<input type="time" value="' + (data.scheduledTime || '07:00') + '" style="width: 18%;" class="r-time" />' +
     '<select class="r-driver" style="width: 25%;"><option value="">Select Driver</option></select>' +
     '<select class="r-bus" style="width: 25%;"><option value="">Select Bus</option></select>' + shopBadge +
@@ -195,21 +204,36 @@ window.loadSchedule = async function() {
 window.saveSchedule = async function() {
   const dateEl = document.getElementById('scheduleDate');
   if (!dateEl) return;
+
+  const am = extractRoutes('amContainer');
+  const pm = extractRoutes('pmContainer');
+  const trip = extractRoutes('tripContainer');
+
+  // Stop save if any route field was left empty
+  if (am.hasError || pm.hasError || trip.hasError) {
+    alert('⚠️ Please enter a Route No. for all added rows before saving.');
+    return;
+  }
+
   const payload = {
     date: dateEl.value,
-    amRoutes: extractRoutes('amContainer'),
-    pmRoutes: extractRoutes('pmContainer'),
-    fieldTrips: extractRoutes('tripContainer')
+    amRoutes: am.routes,
+    pmRoutes: pm.routes,
+    fieldTrips: trip.routes
   };
 
   const res = await fetch('/api/schedule', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
 
-  if (res.ok) { alert('Schedule saved successfully!'); }
-  else { const err = await res.json(); alert('Error: ' + err.error); }
+  if (res.ok) {
+    alert('Schedule saved successfully!');
+  } else {
+    const err = await res.json();
+    alert('Error: ' + (err.error || 'Failed to save schedule'));
+  }
 };
 
 window.copyForward = async function() {

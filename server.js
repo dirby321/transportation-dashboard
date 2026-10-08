@@ -1660,22 +1660,28 @@ app.get('/api/schedule/:date', async (req, res) => {
   res.json(schedule);
 });
 
-app.post('/api/schedule', async (req, res) => {
-  const { date, amRoutes, pmRoutes, fieldTrips } = req.body;
-  const normalizedDate = normalizeDateStr(date);
-
+app.post('/api/schedule', requireAdminAccess(), async (req, res) => {
   try {
-    validateNoDuplicates(amRoutes, 'AM Routes');
-    validateNoDuplicates(pmRoutes, 'PM Routes');
-    validateNoDuplicates(fieldTrips, 'Field Trips');
+    const { date, amRoutes, pmRoutes, fieldTrips } = req.body;
 
-    const schedule = await DailySchedule.findOneAndUpdate(
-      { date: normalizedDate },
-      { amRoutes, pmRoutes, fieldTrips },
+    // Helper to filter out routes without a valid name
+    const clean = (arr) => (Array.isArray(arr) ? arr : []).filter(r => r && r.routeName && r.routeName.trim() !== '');
+
+    const schedule = await Schedule.findOneAndUpdate(
+      { date },
+      {
+        date,
+        amRoutes: clean(amRoutes),
+        pmRoutes: clean(pmRoutes),
+        fieldTrips: clean(fieldTrips)
+      },
       { upsert: true, new: true }
     );
-    res.json(schedule);
-  } catch (err) { res.status(400).json({ error: err.message }); }
+
+    res.json({ message: 'Schedule saved successfully!', schedule });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/schedule/clear-all', requireAdminAccess(), async (req, res) => {
