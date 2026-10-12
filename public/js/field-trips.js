@@ -154,30 +154,50 @@ function buildBusDriverAssignmentHtml(tripId, numBuses, busAssignments) {
 }
 
 function updateAllConflictDropdowns() {
-  const busDropdowns = document.querySelectorAll('.bus-pair-select');
-  const driverDropdowns = document.querySelectorAll('.driver-pair-select');
+  const rows = document.querySelectorAll('#tripTableBody tr');
+  
+  // Group all bus and driver dropdowns by date
+  const dateGroups = {};
 
-  const takenBusIds = new Set();
-  busDropdowns.forEach(dd => { if (dd.value) takenBusIds.add(dd.value); });
+  rows.forEach(row => {
+    const dateInput = row.querySelector('input[type="date"]');
+    const dateVal = dateInput ? dateInput.value : 'unknown';
 
-  const takenDriverIds = new Set();
-  driverDropdowns.forEach(dd => { if (dd.value) takenDriverIds.add(dd.value); });
+    if (!dateGroups[dateVal]) {
+      dateGroups[dateVal] = { buses: [], drivers: [] };
+    }
 
-  busDropdowns.forEach(dd => {
-    Array.from(dd.options).forEach((opt, idx) => {
-      if (idx === 0) return;
-      const isTaken = takenBusIds.has(opt.value) && dd.value !== opt.value;
-      opt.style.display = isTaken ? 'none' : '';
-      opt.disabled = isTaken;
-    });
+    row.querySelectorAll('.bus-pair-select').forEach(dd => dateGroups[dateVal].buses.push(dd));
+    row.querySelectorAll('.driver-pair-select').forEach(dd => dateGroups[dateVal].drivers.push(dd));
   });
 
-  driverDropdowns.forEach(dd => {
-    Array.from(dd.options).forEach((opt, idx) => {
-      if (idx === 0) return;
-      const isTaken = takenDriverIds.has(opt.value) && dd.value !== opt.value;
-      opt.style.display = isTaken ? 'none' : '';
-      opt.disabled = isTaken;
+  // Apply duplicate prevention PER DATE
+  Object.keys(dateGroups).forEach(dateVal => {
+    const busDropdowns = dateGroups[dateVal].buses;
+    const driverDropdowns = dateGroups[dateVal].drivers;
+
+    const takenBusIds = new Set();
+    busDropdowns.forEach(dd => { if (dd.value) takenBusIds.add(dd.value); });
+
+    const takenDriverIds = new Set();
+    driverDropdowns.forEach(dd => { if (dd.value) takenDriverIds.add(dd.value); });
+
+    busDropdowns.forEach(dd => {
+      Array.from(dd.options).forEach((opt, idx) => {
+        if (idx === 0) return;
+        const isTaken = takenBusIds.has(opt.value) && dd.value !== opt.value;
+        opt.style.display = isTaken ? 'none' : '';
+        opt.disabled = isTaken;
+      });
+    });
+
+    driverDropdowns.forEach(dd => {
+      Array.from(dd.options).forEach((opt, idx) => {
+        if (idx === 0) return;
+        const isTaken = takenDriverIds.has(opt.value) && dd.value !== opt.value;
+        opt.style.display = isTaken ? 'none' : '';
+        opt.disabled = isTaken;
+      });
     });
   });
 }
